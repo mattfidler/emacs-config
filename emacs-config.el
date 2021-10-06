@@ -55,9 +55,7 @@
   (setq ergoemacs-theme "reduction"
         ergoemacs-keyboard-layout "colemak"
         ergoemacs-beginning-or-end-of-line-and-what 'page
-        ergoemacs-smart-paste t)
-  :config
-  (ergoemacs-mode 1))
+        ergoemacs-smart-paste t))
 
 (use-package golden-ratio
   :ensure t
@@ -348,20 +346,20 @@
 (use-package multiple-cursors
   :ensure t
   :config
-  (ergoemacs-define-key ergoemacs-override-keymap (kbd "M-*") 'mc/mark-next-like-this)
-  (ergoemacs-define-key ergoemacs-override-keymap (kbd "M-&") 'mc/edit-lines))
+  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-*") 'mc/mark-next-like-this)
+  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-&") 'mc/edit-lines))
 
 (use-package avy
   :ensure t
   :config
-  (ergoemacs-define-key ergoemacs-override-keymap (kbd "M-,") 'avy-goto-word-or-subword-1))
+  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-,") 'avy-goto-word-or-subword-1))
 
 (use-package expand-region
   :commands (er/expand-region er/contract-region er/mark-inside-quotes)
   :ensure t
   :config
-  (ergoemacs-define-key ergoemacs-override-keymap (kbd "M-8") 'er/expand-region)
-  (ergoemacs-define-key ergoemacs-override-keymap (kbd "M-*") 'er/mark-inside-quotes))
+  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-8") 'er/expand-region)
+  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes))
 
 (use-package ess-site
   :load-path "~/src/ESS/site-lisp"
@@ -402,14 +400,20 @@
   :interpreter (("Rscript" . r-mode)
                 ("R" . r-mode))
   :config
-      (when (file-exists-p "~src/Rstartup/Rstartup.R")
-      (setenv "R_PROFILE_USER" (expand-file-name "~src/Rstartup/Rstartup.R")))
-    
-    ;; Make TeX and RefTex aware of Snw and Rnw files
+  
     (setq reftex-file-extensions
-          '(("Snw" "Rnw" "nw" "tex" ".tex" ".ltx") ("bib" ".bib")))
-    (setq TeX-file-extensions
-          '("Snw" "Rnw" "nw" "tex" "sty" "cls" "ltx" "texi" "texinfo"))
+          '(("Snw" "Rnw" "nw" "tex" ".tex" ".ltx") ("bib" ".bib"))
+          TeX-file-extensions
+          '("Snw" "Rnw" "nw" "tex" "sty" "cls" "ltx" "texi" "texinfo")
+          ess-ask-for-ess-directory nil
+          ess-local-process-name "R"
+          ansi-color-for-comint-mode 'filter
+          comint-scroll-to-bottom-on-input t
+          comint-scroll-to-bottom-on-output t
+          comint-move-point-for-output t
+          ess-nuke-trailing-whitespace-p t
+          ess-roxy-str "#'")
+
 
     ;; Lets you do 'C-c C-c Sweave' from your Rnw file
     (defun ergoemacs-add-Sweave ()
@@ -422,20 +426,14 @@
       (setq TeX-command-default "Sweave"))
     (add-hook 'Rnw-mode-hook 'emacsmate-add-Sweave)
 
-    (setq ess-ask-for-ess-directory nil
-          ess-local-process-name "R"
-          ansi-color-for-comint-mode 'filter
-          comint-scroll-to-bottom-on-input t
-          comint-scroll-to-bottom-on-output t
-          comint-move-point-for-output t)
     (add-hook 'ess-mode-hook
 	          (lambda()
 		        (ess-set-style 'RStudio 'quiet)
 		        (add-hook 'local-write-file-hooks
                           (lambda ()
                             (ess-nuke-trailing-whitespace)))
-		        (electric-operator-mode)))
-    (setq ess-nuke-trailing-whitespace-p t))
+                (ess-roxy-mode 1)
+		        (electric-operator-mode))))
 
 (use-package poly-markdown
   :ensure t
@@ -444,6 +442,21 @@
 (use-package flycheck
   :config
   (global-flycheck-mode 1))
+
+(use-package undo-fu
+  :ensure t
+  :config
+  (global-set-key [remap ergoemacs-redo] 'undo-fu-only-redo)
+  (global-set-key [remap undo] 'undo-fu-only-undo))
+
+(global-set-key (kbd "<f11>") 'toggle-frame-fullscreen)
+(global-set-key (kbd "<f10>") 'menu-bar-mode)
+(global-set-key (kbd "<f12>") 'tool-bar-mode)
+(global-set-key (kbd "<f9>") 'tabbar-mode)
+
+(ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> n") 'R (kbd "r"))
+
+(ergoemacs-mode 1)
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; emacs-config.el ends here
