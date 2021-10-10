@@ -358,8 +358,8 @@
   :commands (er/expand-region er/contract-region er/mark-inside-quotes)
   :ensure t
   :config
-  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-8") 'er/expand-region)
-  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes))
+  (define-key ergoemacs-user-keymap (kbd "M-8") 'er/expand-region)
+  (define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes))
 
 (use-package ess-site
   :load-path "~/src/ESS/site-lisp"
@@ -412,7 +412,9 @@
           comint-scroll-to-bottom-on-output t
           comint-move-point-for-output t
           ess-nuke-trailing-whitespace-p t
-          ess-roxy-str "#'")
+          ess-roxy-str "#'"
+          inferior-R-args "--no-save --quiet"
+          ess-insert-assign nil)
 
 
     ;; Lets you do 'C-c C-c Sweave' from your Rnw file
@@ -433,7 +435,13 @@
                           (lambda ()
                             (ess-nuke-trailing-whitespace)))
                 (ess-roxy-mode 1)
-		        (electric-operator-mode))))
+		        (electric-operator-mode)))
+    ;; Setup ASCII colors
+    (add-hook 'shell-mode-hook 'ansi-color-for-comint-mode-on)
+    (add-to-list 'comint-output-filter-functions 'ansi-color-process-output)
+
+    ;;Remove ESS smart underscore
+    (ess-toggle-underscore nil))
 
 (use-package poly-markdown
   :ensure t
