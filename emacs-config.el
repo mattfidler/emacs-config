@@ -57,6 +57,9 @@
         ergoemacs-beginning-or-end-of-line-and-what 'page
         ergoemacs-smart-paste t))
 
+(use-package electric-operator
+  :ensure t)
+
 (use-package golden-ratio
   :ensure t
   :config
