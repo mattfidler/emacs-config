@@ -441,7 +441,16 @@
 		        (electric-operator-mode)))
     ;; Setup ASCII colors
     (add-hook 'shell-mode-hook 'ansi-color-for-comint-mode-on)
+    
+    (setq ansi-color-for-comint-mode 'filter
+          comint-scroll-to-bottom-on-input t
+          comint-scroll-to-bottom-on-output t
+          comint-move-point-for-output t)
     (add-to-list 'comint-output-filter-functions 'ansi-color-process-output)
+
+    (add-hook 'inferior-ess-mode-hook
+              (lambda()
+                (ansi-color-for-comint-mode-on)))
 
     ;;Remove ESS smart underscore
     (ess-toggle-underscore nil))
@@ -459,6 +468,13 @@
   :config
   (global-set-key [remap ergoemacs-redo] 'undo-fu-only-redo)
   (global-set-key [remap undo] 'undo-fu-only-undo))
+
+(use-package yaml-mode
+  :ensure t
+  :config
+  (add-hook 'yaml-mode-hook
+          (lambda ()
+            (define-key yaml-mode-map "\C-m" 'newline-and-indent))))
 
 (global-set-key (kbd "<f11>") 'toggle-frame-fullscreen)
 (global-set-key (kbd "<f10>") 'menu-bar-mode)
