@@ -227,8 +227,7 @@
   :commands (vr/query-replace vr/replace)
   :init
   (global-set-key [remap query-replace] 'vr/query-replace)
-  (global-set-key [remap replace] 'vr/replace)
-  )
+  (global-set-key [remap replace] 'vr/replace))
 
 
 (use-package rainbow-delimiters
@@ -397,7 +396,7 @@
            ("\\.[Jj][Aa][Gg]\\'"         . ess-jags-mode)
            ("\\.[Jj][Oo][Gg]\\'"         . ess-jags-mode)
            ("\\.[Jj][Mm][Dd]\\'"         . ess-jags-mode)
-	   ;; ("\\.[Rr][mM][Dd]\\'"         . poly-markdown+r-mode)
+	       ;;("\\.[Rr][mM][Dd]\\'"         . poly-markdown+r-mode)
 	       )
   :commands (R)
   :interpreter (("Rscript" . r-mode)
@@ -455,9 +454,12 @@
     ;;Remove ESS smart underscore
     (ess-toggle-underscore nil))
 
+(use-package poly-R
+  :ensure t)
+
 (use-package poly-markdown
-  :ensure t
-  :mode ("\\.[Rr][mM][Dd]\\'"         . poly-markdown+r-mode))
+  :mode ("\\.[Rr][mM][Dd][Hh]\\'"         . poly-markdown+r-mode)
+  :ensure t)
 
 (use-package flycheck
   :config
@@ -482,6 +484,7 @@
 (global-set-key (kbd "<f9>") 'tabbar-mode)
 
 (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> n") 'R (kbd "r"))
+
 
 (ergoemacs-mode 1)
 (provide 'emacs-config)
