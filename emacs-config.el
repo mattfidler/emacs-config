@@ -341,7 +341,7 @@
 (use-package solarized-theme
   :ensure t
   :config
-  (load-theme 'solarized-light t))
+  (load-theme 'solarized-dark t))
 
 (electric-pair-mode 1)
 
@@ -477,6 +477,11 @@
   (add-hook 'yaml-mode-hook
           (lambda ()
             (define-key yaml-mode-map "\C-m" 'newline-and-indent))))
+
+(use-package smart-mode-line
+  :ensure t
+  :config
+  (sml/setup))
 
 (global-set-key (kbd "<f11>") 'toggle-frame-fullscreen)
 (global-set-key (kbd "<f10>") 'menu-bar-mode)
