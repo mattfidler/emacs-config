@@ -416,7 +416,15 @@
           ess-nuke-trailing-whitespace-p t
           ess-roxy-str "#'"
           inferior-R-args "--no-save --quiet"
-          ess-insert-assign nil)
+          ess-insert-assign nil
+          ess-user-full-name "Matthew L. Fidler"
+          ess-roxy-template-alist
+          (list (cons "description"  " ")
+                (cons "details" " ")
+                (cons "param"  "")
+                (cons "return" "")
+                (cons "author" ess-user-full-name)
+                (cons "examples" "")))
 
 
     ;; Lets you do 'C-c C-c Sweave' from your Rnw file
