@@ -341,7 +341,7 @@
 (use-package solarized-theme
   :ensure t
   :config
-  (load-theme 'solarized-dark t))
+  (load-theme 'solarized-light t))
 
 (electric-pair-mode 1)
 
