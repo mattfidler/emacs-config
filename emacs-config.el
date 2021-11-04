@@ -459,7 +459,7 @@
               (lambda()
                 (ansi-color-for-comint-mode-on)))
 
-    ;;Remove ESS smart underscore
+    ;;Remove ESS smart underscore
     (ess-toggle-underscore nil))
 
 (use-package poly-R
@@ -498,6 +498,13 @@
 
 (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> n") 'R (kbd "r"))
 
+(when (file-exists-p "c:/Progra~1/Git/mingw64/bin")
+  (add-to-list 'exec-path "c:\\Progra~1\\Git\\mingw64\\bin")
+  (setenv "PATH" (mapconcat (lambda(x) x) exec-path ";")))
+
+(when (file-exists-p "C:/bin/rstudio/bin/gnugrep")
+  (add-to-list 'exec-path "C:\\bin\\rstudio\\bin\\gnugrep")
+  (setenv "PATH" (mapconcat (lambda(x) x) exec-path ";")))
 
 (ergoemacs-mode 1)
 (provide 'emacs-config)
