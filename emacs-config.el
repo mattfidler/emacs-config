@@ -177,6 +177,10 @@
               imenu-auto-rescan t
               text-mode-hook 'turn-on-auto-fill
               text-mode-hook 'turn-on-flyspell)
+
+(add-hook 'text-mode-hook 'flyspell-mode)
+(add-hook 'prog-mode-hook 'flyspell-prog-mode)
+
 (set-terminal-coding-system 'utf-8)
 (set-keyboard-coding-system 'utf-8)
 (prefer-coding-system 'utf-8)
@@ -445,7 +449,8 @@
                           (lambda ()
                             (ess-nuke-trailing-whitespace)))
                 (ess-roxy-mode 1)
-		        (electric-operator-mode)))
+		        (electric-operator-mode)
+                (run-hooks 'prog-mode-hook)))
     ;; Setup ASCII colors
     (add-hook 'shell-mode-hook 'ansi-color-for-comint-mode-on)
     
