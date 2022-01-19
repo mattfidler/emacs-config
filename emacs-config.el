@@ -503,6 +503,8 @@
 
 (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> n") 'R (kbd "r"))
 
+(when (file-exists-p "C:/bin/rstudio/bin/gnugrep")
+  (add-to-list 'exec-path "C:\\bin\\rstudio\\bin\\gnugrep")
 
 (ergoemacs-mode 1)
 (provide 'emacs-config)
