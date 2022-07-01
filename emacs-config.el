@@ -367,8 +367,10 @@
   (define-key ergoemacs-user-keymap (kbd "M-8") 'er/expand-region)
   (define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes))
 
+
 (use-package ess-site
-  :load-path "~/src/ESS/site-lisp"
+  :load-path( "~/src/ESS/site-lisp"
+              "~/src/ESS/lisp")
   :mode (("\\.sp\\'"          . S-mode) ;; re: Don MacQueen <macq@llnl.gov>
            ("/R/.*\\.q\\'"      . R-mode) ;; R/*.q is R code (e.g., in package)
            ("\\.[qsS]\\'"       . S-mode) ;; s,S [see ess-restore-asm-extns above!]
@@ -406,7 +408,10 @@
   :interpreter (("Rscript" . r-mode)
                 ("R" . r-mode))
   :config
-  
+
+
+
+  (require 'ess-site)
     (setq reftex-file-extensions
           '(("Snw" "Rnw" "nw" "tex" ".tex" ".ltx") ("bib" ".bib"))
           TeX-file-extensions
