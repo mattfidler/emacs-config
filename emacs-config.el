@@ -369,8 +369,7 @@
 
 
 (use-package ess-site
-  :load-path( "~/src/ESS/site-lisp"
-              "~/src/ESS/lisp")
+  :load-path("~/src/ESS/site-lisp" "~/src/ESS/lisp")
   :mode (("\\.sp\\'"          . S-mode) ;; re: Don MacQueen <macq@llnl.gov>
            ("/R/.*\\.q\\'"      . R-mode) ;; R/*.q is R code (e.g., in package)
            ("\\.[qsS]\\'"       . S-mode) ;; s,S [see ess-restore-asm-extns above!]
@@ -409,52 +408,54 @@
                 ("R" . r-mode))
   :config
 
-
-
   (require 'ess-site)
-    (setq reftex-file-extensions
-          '(("Snw" "Rnw" "nw" "tex" ".tex" ".ltx") ("bib" ".bib"))
-          TeX-file-extensions
-          '("Snw" "Rnw" "nw" "tex" "sty" "cls" "ltx" "texi" "texinfo")
-          ess-ask-for-ess-directory nil
-          ess-local-process-name "R"
-          ansi-color-for-comint-mode 'filter
-          comint-scroll-to-bottom-on-input t
-          comint-scroll-to-bottom-on-output t
-          comint-move-point-for-output t
-          ess-nuke-trailing-whitespace-p t
-          ess-roxy-str "#'"
-          inferior-R-args "--no-save --quiet"
-          ess-insert-assign nil
-          ess-user-full-name "Matthew L. Fidler"
-          ess-roxy-template-alist
-          (list (cons "description"  " ")
-                (cons "details" " ")
-                (cons "param"  "")
-                (cons "return" "")
-                (cons "author" ess-user-full-name)
-                (cons "examples" "")))
 
+  ;; Lets you do 'C-c C-c Sweave' from your Rnw file
+  (defun ergoemacs-add-Sweave ()
+    (add-to-list 'TeX-command-list
+                 '("Sweave" "R CMD Sweave %s"
+                   TeX-run-command nil (latex-mode) :help "Run Sweave") t)
+    (add-to-list 'TeX-command-list
+                 '("LatexSweave" "%l %(mode) %s"
+                   TeX-run-TeX nil (latex-mode) :help "Run Latex after Sweave") t)
+    (setq TeX-command-default "Sweave"))
+  (add-hook 'Rnw-mode-hook 'emacsmate-add-Sweave)
 
-    ;; Lets you do 'C-c C-c Sweave' from your Rnw file
-    (defun ergoemacs-add-Sweave ()
-      (add-to-list 'TeX-command-list
-                   '("Sweave" "R CMD Sweave %s"
-                     TeX-run-command nil (latex-mode) :help "Run Sweave") t)
-      (add-to-list 'TeX-command-list
-                   '("LatexSweave" "%l %(mode) %s"
-                     TeX-run-TeX nil (latex-mode) :help "Run Latex after Sweave") t)
-      (setq TeX-command-default "Sweave"))
-    (add-hook 'Rnw-mode-hook 'emacsmate-add-Sweave)
+  (add-hook 'emacs-startup-hook
+            (lambda()
+              (setq reftex-file-extensions
+                    '(("Snw" "Rnw" "nw" "tex" ".tex" ".ltx") ("bib" ".bib"))
+                    TeX-file-extensions
+                    '("Snw" "Rnw" "nw" "tex" "sty" "cls" "ltx" "texi" "texinfo")
+                    ess-ask-for-ess-directory nil
+                    ess-local-process-name "R"
+                    ansi-color-for-comint-mode 'filter
+                    comint-scroll-to-bottom-on-input t
+                    comint-scroll-to-bottom-on-output t
+                    comint-move-point-for-output t
+                    ess-nuke-trailing-whitespace-p t
+                    ess-roxy-str "#'"
+                    inferior-R-args "--no-save --quiet"
+                    ess-insert-assign nil
+                    ess-user-full-name "Matthew L. Fidler"
+                    ess-roxy-template-alist
+                    ;; (list (cons "description"  " ")
+                    ;;       (cons "details" " ")
+                    ;;       (cons "param"  "")
+                    ;;       (cons "return" "")
+                    ;;       (cons "author" ess-user-full-name)
+                    ;;       (cons "examples" ""))
+                    )))
 
-    (add-hook 'ess-mode-hook
-	          (lambda()
-		        (ess-set-style 'RStudio 'quiet)
-		        (add-hook 'local-write-file-hooks
-                          (lambda ()
-                            (ess-nuke-trailing-whitespace)))
-                (ess-roxy-mode 1)
-		        (electric-operator-mode)
+  (add-hook 'ess-mode-hook
+	        (lambda()
+		      (ess-set-style 'RStudio 'quiet)
+		      (add-hook 'local-write-file-hooks
+                        (lambda ()
+                          (ess-nuke-trailing-whitespace)))
+              (ess-roxy-mode 1)
+		      (electric-operator-mode)
+              
                 (run-hooks 'prog-mode-hook)))
     ;; Setup ASCII colors
     (add-hook 'shell-mode-hook 'ansi-color-for-comint-mode-on)
