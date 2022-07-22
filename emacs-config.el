@@ -409,6 +409,7 @@
   :config
 
   (require 'ess-site)
+  (require 'ess-autoloads)
 
   ;; Lets you do 'C-c C-c Sweave' from your Rnw file
   (defun ergoemacs-add-Sweave ()
@@ -428,6 +429,7 @@
                     TeX-file-extensions
                     '("Snw" "Rnw" "nw" "tex" "sty" "cls" "ltx" "texi" "texinfo")
                     ess-ask-for-ess-directory nil
+                    ess-indent-level 2
                     ess-local-process-name "R"
                     ansi-color-for-comint-mode 'filter
                     comint-scroll-to-bottom-on-input t
@@ -455,8 +457,8 @@
                           (ess-nuke-trailing-whitespace)))
               (ess-roxy-mode 1)
 		      (electric-operator-mode)
-              
-                (run-hooks 'prog-mode-hook)))
+              (run-hooks 'prog-mode-hook)
+              (set (make-variable-buffer-local 'ess-indent-level) 2)))
     ;; Setup ASCII colors
     (add-hook 'shell-mode-hook 'ansi-color-for-comint-mode-on)
     
