@@ -277,36 +277,37 @@
 
                                         ;(setq pop-up-frames 'graphic-only)
 
-(if (version< "24.4" emacs-version)
-  (use-package tabbar-ruler
-    :ensure t
-    :init
-    (setq tabbar-ruler-global-tabbar t ; If you want tabbar
-          ;;tabbar-ruler-global-ruler t ; if you want a global ruler
-          ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
-          ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
-          ;;tabbar-ruler-popup-scrollbar nil
-          ;; tabbar-ruler-style 'firefox-circle
-	      ) ; Popup scrollbar
-    )
-  (when (file-exists-p "~/.emacs.d/tabbar")
-    (add-to-list 'load-path "~/.emacs.d/tabbar")
-    (use-package tabbar))
-  (when (file-exists-p "~/.emacs.d/mode-icons")
-    (add-to-list 'load-path "~/.emacs.d/mode-icons")
-    (require 'mode-icons))
-  (when (file-exists-p "~/.emacs.d/tabbar-ruler.el")
-    (add-to-list 'load-path "~/.emacs.d/tabbar-ruler.el")
-    (use-package tabbar-ruler
-      :init
-      (setq tabbar-ruler-global-tabbar t ; If you want tabbar
-            ;;tabbar-ruler-global-ruler t ; if you want a global ruler
-            ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
-            ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
-            ;;tabbar-ruler-popup-scrollbar nil
-            ;; tabbar-ruler-style 'firefox-circle
-	        ) ; Popup scrollbar
-      )))
+(when (display-graphic-p)
+  (if (version< "24.4" emacs-version)
+      (use-package tabbar-ruler
+        :ensure t
+        :init
+        (setq tabbar-ruler-global-tabbar t ; If you want tabbar
+              ;;tabbar-ruler-global-ruler t ; if you want a global ruler
+              ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
+              ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
+              ;;tabbar-ruler-popup-scrollbar nil
+              ;; tabbar-ruler-style 'firefox-circle
+	          ) ; Popup scrollbar
+        )
+    (when (file-exists-p "~/.emacs.d/tabbar")
+      (add-to-list 'load-path "~/.emacs.d/tabbar")
+      (use-package tabbar))
+    (when (file-exists-p "~/.emacs.d/mode-icons")
+      (add-to-list 'load-path "~/.emacs.d/mode-icons")
+      (require 'mode-icons))
+    (when (file-exists-p "~/.emacs.d/tabbar-ruler.el")
+      (add-to-list 'load-path "~/.emacs.d/tabbar-ruler.el")
+      (use-package tabbar-ruler
+        :init
+        (setq tabbar-ruler-global-tabbar t ; If you want tabbar
+              ;;tabbar-ruler-global-ruler t ; if you want a global ruler
+              ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
+              ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
+              ;;tabbar-ruler-popup-scrollbar nil
+              ;; tabbar-ruler-style 'firefox-circle
+	          ) ; Popup scrollbar
+        ))))
 
 (setq-default indent-tabs-mode nil)
 (setq-default tab-width 4)
