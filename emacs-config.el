@@ -354,7 +354,7 @@
   (when (file-exists-p "~/.emacs.d/solarized-emacs")
     (add-to-list 'load-path "~/.emacs.d/solarized-emacs")
     (add-to-list 'custom-theme-load-path "~/.emacs.d/solarized-emacs")
-    (loag-theme 'solarized-light t)))
+    (load-theme 'solarized-light t)))
 
 (electric-pair-mode 1)
 
