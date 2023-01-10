@@ -60,7 +60,7 @@
         ergoemacs-beginning-or-end-of-line-and-what 'page
         ergoemacs-smart-paste t))
 
-(when (version> emacs-version "24.4")
+(when (version< "24.3" emacs-version)
   (use-package electric-operator
     :ensure t))
 
@@ -151,7 +151,7 @@
 
 (ido-mode 1)
 
-(when (version> emacs-version "24.4")
+(when (version< "24.3" emacs-version)
   (use-package ido-completing-read+
     :ensure t
     :config
@@ -249,7 +249,7 @@
   :config
   (indent-guide-global-mode 1))
 
-(when (version> emacs-version "24.4")
+(when (version<  "24.3" emacs-version)
   (use-package page-break-lines
     :ensure t
     :config
@@ -268,7 +268,7 @@
 
                                         ;(setq pop-up-frames 'graphic-only)
 
-(when (version> emacs-version "24.4")
+(when (version< "24.3" emacs-version)
   (use-package tabbar-ruler
     :ensure t
     :init
@@ -305,7 +305,7 @@
 (setq auto-save-file-name-transforms
       `((".*" ,temporary-file-directory t)))
 
-(when (version> emacs-version "24.4")
+(when (version< "24.3" emacs-version)
   (use-package keyfreq
     :ensure t
     :init
@@ -339,7 +339,7 @@
 (add-hook 'emacs-lisp-mode-hook #'turn-on-eldoc-mode)
 
 
-(when (version> emacs-version "24.4")
+(when (version< "24.3" emacs-version)
   (use-package magit
     :ensure t
     :commands (magit-status)
@@ -353,7 +353,7 @@
 
 (electric-pair-mode 1)
 
-(when (version> emacs-version "24.4")
+(when (version< "24.3" emacs-version)
   (use-package multiple-cursors
   :ensure t
   :config
@@ -365,7 +365,7 @@
   :config
   (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-,") 'avy-goto-word-or-subword-1))
 
-(when (version> emacs-version "24.4")
+(when (version< "24.3" emacs-version)
   (use-package expand-region
     :commands (er/expand-region er/contract-region er/mark-inside-quotes)
     :ensure t
@@ -493,7 +493,7 @@
     ;;Remove ESS smart underscore
     (ess-toggle-underscore nil))
 
-(when (version> emacs-version "24.4")
+(when (version< "24.3" emacs-version)
   (use-package poly-R
     :ensure t)
 
@@ -518,7 +518,7 @@
           (lambda ()
             (define-key yaml-mode-map "\C-m" 'newline-and-indent))))
 
-(when (version> emacs-version "24.4")
+(when (version< "24.3" emacs-version)
   (use-package smart-mode-line
     :ensure t
     :config
