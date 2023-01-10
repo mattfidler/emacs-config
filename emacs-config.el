@@ -49,8 +49,11 @@
 (eval-when-compile
   (require 'use-package))
 
+(if (file-exists-p "~/src/ergoemacs-mode")
+    (add-to-list 'load-path "~/src/ergoemacs-mode")
+  (add-to-list 'load-path "~/.emacs.d/ergoemacs-mode"))
+
 (use-package ergoemacs-mode
-  :load-path "~/src/ergoemacs-mode"
   :init
   (setq ergoemacs-theme "reduction"
         ergoemacs-keyboard-layout "colemak"
@@ -368,8 +371,14 @@
   (define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes))
 
 
+(if (file-exists-p "~/src/ESS")
+    (progn
+      (add-to-list 'load-path "~/src/ESS/site-lisp")
+      (add-to-list 'load-path "~/src/ESS/lisp"))
+  (add-to-list 'load-path "~/.emacs.d/ESS/site-lisp")
+  (add-to-list 'load-path "~/.emacs.d/ESS/lisp"))
+
 (use-package ess-site
-  :load-path("~/src/ESS/site-lisp" "~/src/ESS/lisp")
   :mode (("\\.sp\\'"          . S-mode) ;; re: Don MacQueen <macq@llnl.gov>
            ("/R/.*\\.q\\'"      . R-mode) ;; R/*.q is R code (e.g., in package)
            ("\\.[qsS]\\'"       . S-mode) ;; s,S [see ess-restore-asm-extns above!]
@@ -449,6 +458,12 @@
                     ;;       (cons "examples" ""))
                     )))
 
+
+  (defun myindent-ess-hook ()
+  (setq ess-indent-level 2)
+  (setq ess-offset-arguments-newline '(prev-line 2))
+)
+(add-hook 'ess-mode-hook 'myindent-ess-hook)
   (add-hook 'ess-mode-hook
 	        (lambda()
 		      (ess-set-style 'RStudio 'quiet)
@@ -458,7 +473,8 @@
               (ess-roxy-mode 1)
 		      (electric-operator-mode)
               (run-hooks 'prog-mode-hook)
-              (set (make-variable-buffer-local 'ess-indent-level) 2)))
+              (set (make-variable-buffer-local 'ess-indent-level) 2)
+              (setq ess-offset-arguments-newline '(prev-line 2))))
     ;; Setup ASCII colors
     (add-hook 'shell-mode-hook 'ansi-color-for-comint-mode-on)
     
