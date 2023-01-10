@@ -208,10 +208,15 @@
 (transient-mark-mode t)
 (defalias 'yes-or-no-p 'y-or-n-p)
 
-(use-package company
-  :ensure t
-  :init
-  (add-hook 'after-init-hook 'global-company-mode))
+(if (version< "24.4" emacs-version)
+    (use-package company
+      :ensure t
+      :init
+      (add-hook 'after-init-hook 'global-company-mode))
+  (when (file-exists-p "~/.emacs.d/company-mode")
+    (add-to-list 'load-path "~/.emacs.d/company-mode")
+    (require 'company)
+    (add-hook 'after-init-hook 'global-company-mode)))
 
 (setq set-mark-command-repeat-pop t)
 
