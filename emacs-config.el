@@ -60,8 +60,9 @@
         ergoemacs-beginning-or-end-of-line-and-what 'page
         ergoemacs-smart-paste t))
 
-(use-package electric-operator
-  :ensure t)
+(when (version> emacs-version "24.4")
+  (use-package electric-operator
+    :ensure t))
 
 (use-package golden-ratio
   :ensure t
@@ -150,10 +151,11 @@
 
 (ido-mode 1)
 
-(use-package ido-completing-read+
-  :ensure t
-  :config
-  (ido-ubiquitous-mode 1))
+(when (version> emacs-version "24.4")
+  (use-package ido-completing-read+
+    :ensure t
+    :config
+    (ido-ubiquitous-mode 1)))
 
 (use-package smex
   :ensure t
@@ -164,11 +166,6 @@
   :ensure t
   :config
   (ido-vertical-mode))
-
-(use-package smex
-  :ensure t
-  :config
-  (smex-initialize))
 
 (use-package flx-ido
   :ensure t
@@ -252,10 +249,11 @@
   :config
   (indent-guide-global-mode 1))
 
-(use-package page-break-lines
-  :ensure t
-  :config
-  (global-page-break-lines-mode t))
+(when (version> emacs-version "24.4")
+  (use-package page-break-lines
+    :ensure t
+    :config
+    (global-page-break-lines-mode t)))
 
 (use-package volatile-highlights
   :ensure t
@@ -270,17 +268,18 @@
 
                                         ;(setq pop-up-frames 'graphic-only)
 
-(use-package tabbar-ruler
-  :ensure t
-  :init
-  (setq tabbar-ruler-global-tabbar t ; If you want tabbar
-        ;;tabbar-ruler-global-ruler t ; if you want a global ruler
-        ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
-        ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
-        ;;tabbar-ruler-popup-scrollbar nil
-        ;; tabbar-ruler-style 'firefox-circle
-	    ) ; Popup scrollbar
-  )
+(when (version> emacs-version "24.4")
+  (use-package tabbar-ruler
+    :ensure t
+    :init
+    (setq tabbar-ruler-global-tabbar t ; If you want tabbar
+          ;;tabbar-ruler-global-ruler t ; if you want a global ruler
+          ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
+          ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
+          ;;tabbar-ruler-popup-scrollbar nil
+          ;; tabbar-ruler-style 'firefox-circle
+	      ) ; Popup scrollbar
+    ))
 
 (setq-default indent-tabs-mode nil)
 (setq-default tab-width 4)
@@ -306,14 +305,15 @@
 (setq auto-save-file-name-transforms
       `((".*" ,temporary-file-directory t)))
 
-(use-package keyfreq
-  :ensure t
-  :init
-  (setq keyfreq-file (expand-file-name ".emacs.keyfreq" user-emacs-directory)
-        keyfreq-file-lock (expand-file-name ".emacs.keyfreq.lock" user-emacs-directory))
-  :config
-  (keyfreq-mode 1)
-  (keyfreq-autosave-mode 1))
+(when (version> emacs-version "24.4")
+  (use-package keyfreq
+    :ensure t
+    :init
+    (setq keyfreq-file (expand-file-name ".emacs.keyfreq" user-emacs-directory)
+          keyfreq-file-lock (expand-file-name ".emacs.keyfreq.lock" user-emacs-directory))
+    :config
+    (keyfreq-mode 1)
+    (keyfreq-autosave-mode 1)))
 
 (auto-compression-mode t)
 
@@ -339,11 +339,12 @@
 (add-hook 'emacs-lisp-mode-hook #'turn-on-eldoc-mode)
 
 
-(use-package magit
-  :ensure t
-  :commands (magit-status)
-  ;; (add-hook 'magit-mode-hook #'turn-on-magit-gh-pulls)
-  )
+(when (version> emacs-version "24.4")
+  (use-package magit
+    :ensure t
+    :commands (magit-status)
+    ;; (add-hook 'magit-mode-hook #'turn-on-magit-gh-pulls)
+    ))
 
 (use-package solarized-theme
   :ensure t
@@ -352,24 +353,25 @@
 
 (electric-pair-mode 1)
 
-(use-package multiple-cursors
+(when (version> emacs-version "24.4")
+  (use-package multiple-cursors
   :ensure t
   :config
   (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-*") 'mc/mark-next-like-this)
-  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-&") 'mc/edit-lines))
+  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-&") 'mc/edit-lines)))
 
 (use-package avy
   :ensure t
   :config
   (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-,") 'avy-goto-word-or-subword-1))
 
-(use-package expand-region
-  :commands (er/expand-region er/contract-region er/mark-inside-quotes)
-  :ensure t
-  :config
-  (define-key ergoemacs-user-keymap (kbd "M-8") 'er/expand-region)
-  (define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes))
-
+(when (version> emacs-version "24.4")
+  (use-package expand-region
+    :commands (er/expand-region er/contract-region er/mark-inside-quotes)
+    :ensure t
+    :config
+    (define-key ergoemacs-user-keymap (kbd "M-8") 'er/expand-region)
+    (define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes)))
 
 (if (file-exists-p "~/src/ESS")
     (progn
@@ -491,22 +493,23 @@
     ;;Remove ESS smart underscore
     (ess-toggle-underscore nil))
 
-(use-package poly-R
-  :ensure t)
+(when (version> emacs-version "24.4")
+  (use-package poly-R
+    :ensure t)
 
-(use-package poly-markdown
-  :mode ("\\.[Rr][mM][Dd][Hh]\\'"         . poly-markdown+r-mode)
-  :ensure t)
+  (use-package poly-markdown
+    :mode ("\\.[Rr][mM][Dd][Hh]\\'"         . poly-markdown+r-mode)
+    :ensure t)
 
-(use-package flycheck
-  :config
-  (global-flycheck-mode 1))
+  (use-package flycheck
+    :config
+    (global-flycheck-mode 1))
 
-(use-package undo-fu
-  :ensure t
-  :config
-  (global-set-key [remap ergoemacs-redo] 'undo-fu-only-redo)
-  (global-set-key [remap undo] 'undo-fu-only-undo))
+  (use-package undo-fu
+    :ensure t
+    :config
+    (global-set-key [remap ergoemacs-redo] 'undo-fu-only-redo)
+    (global-set-key [remap undo] 'undo-fu-only-undo)))
 
 (use-package yaml-mode
   :ensure t
@@ -515,10 +518,11 @@
           (lambda ()
             (define-key yaml-mode-map "\C-m" 'newline-and-indent))))
 
-(use-package smart-mode-line
-  :ensure t
-  :config
-  (sml/setup))
+(when (version> emacs-version "24.4")
+  (use-package smart-mode-line
+    :ensure t
+    :config
+    (sml/setup)))
 
 (global-set-key (kbd "<f11>") 'toggle-frame-fullscreen)
 (global-set-key (kbd "<f10>") 'menu-bar-mode)
