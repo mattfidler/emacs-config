@@ -365,13 +365,20 @@
   :config
   (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-,") 'avy-goto-word-or-subword-1))
 
-(when (version< "24.4" emacs-version)
-  (use-package expand-region
-    :commands (er/expand-region er/contract-region er/mark-inside-quotes)
-    :ensure t
-    :config
-    (define-key ergoemacs-user-keymap (kbd "M-8") 'er/expand-region)
-    (define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes)))
+(if (version< "24.4" emacs-version)
+    (use-package expand-region
+      :commands (er/expand-region er/contract-region er/mark-inside-quotes)
+      :ensure t
+      :config
+      (define-key ergoemacs-user-keymap (kbd "M-8") 'er/expand-region)
+      (define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes))
+  (when (file-exists-p "~/.emacs.d/expand-region.el")
+    (add-to-list 'load-path "~/.emacs.d/expand-region.el")
+    (use-package expand-region
+      :commands (er/expand-region er/contract-region er/mark-inside-quotes)
+      :config
+      (define-key ergoemacs-user-keymap (kbd "M-8") 'er/expand-region)
+      (define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes))))
 
 (if (file-exists-p "~/src/ESS")
     (progn
