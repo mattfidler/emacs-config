@@ -549,11 +549,18 @@
           (lambda ()
             (define-key yaml-mode-map "\C-m" 'newline-and-indent))))
 
-(when (version< "24.4" emacs-version)
-  (use-package smart-mode-line
-    :ensure t
-    :config
-    (sml/setup)))
+(if (version< "24.4" emacs-version)
+    (use-package smart-mode-line
+      :ensure t
+      :config
+      (sml/setup))
+  (when (file-exists-p "~/.emacs.d/rich-minority")
+    (add-to-list 'load-path "~/.emacs.d/rich-minority")
+    (require 'rich-minority))
+  (when (file-exists-p "~/.emacs.d/smart-mode-line")
+    (add-to-list 'load-path "~/.emacs.d/smart-mode-line")
+    (require 'smart-mode-line)
+    (sml/setup))
 
 (global-set-key (kbd "<f11>") 'toggle-frame-fullscreen)
 (global-set-key (kbd "<f10>") 'menu-bar-mode)
