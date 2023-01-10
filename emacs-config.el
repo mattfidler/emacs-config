@@ -560,7 +560,7 @@
   (when (file-exists-p "~/.emacs.d/smart-mode-line")
     (add-to-list 'load-path "~/.emacs.d/smart-mode-line")
     (require 'smart-mode-line)
-    (sml/setup))
+    (sml/setup)))
 
 (global-set-key (kbd "<f11>") 'toggle-frame-fullscreen)
 (global-set-key (kbd "<f10>") 'menu-bar-mode)
