@@ -208,6 +208,10 @@
 (transient-mark-mode t)
 (defalias 'yes-or-no-p 'y-or-n-p)
 
+(use-package company
+  :ensure t
+  :init
+  (add-hook 'after-init-hook 'global-company-mode))
 
 (setq set-mark-command-repeat-pop t)
 
