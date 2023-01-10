@@ -361,12 +361,15 @@
 (add-hook 'emacs-lisp-mode-hook #'turn-on-eldoc-mode)
 
 
-(when (version< "24.4" emacs-version)
-  (use-package magit
-    :ensure t
-    :commands (magit-status)
-    ;; (add-hook 'magit-mode-hook #'turn-on-magit-gh-pulls)
-    ))
+(if (version< "24.4" emacs-version)
+    (use-package magit
+      :ensure t
+      :commands (magit-status)
+      ;; (add-hook 'magit-mode-hook #'turn-on-magit-gh-pulls)
+      )
+  (when (file-exists-p "~/.emacs.d/magit")
+    (add-to-list 'load-path "~/.emacs.d/magit")
+    (require 'magit)))
 
 (if (version< "24.4" emacs-version)
     (use-package solarized-theme
