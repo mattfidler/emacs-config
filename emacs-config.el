@@ -268,7 +268,7 @@
 
                                         ;(setq pop-up-frames 'graphic-only)
 
-(when (version< "24.4" emacs-version)
+(if (version< "24.4" emacs-version)
   (use-package tabbar-ruler
     :ensure t
     :init
@@ -279,7 +279,10 @@
           ;;tabbar-ruler-popup-scrollbar nil
           ;; tabbar-ruler-style 'firefox-circle
 	      ) ; Popup scrollbar
-    ))
+    )
+  (when (file-exists-p "~/.emacs.d/tabbar")
+    (add-to-list 'load-path "~/.emacs.d/tabbar")
+    (require 'tabbar)))
 
 (setq-default indent-tabs-mode nil)
 (setq-default tab-width 4)
@@ -351,10 +354,11 @@
       :ensure t
       :config
       (load-theme 'solarized-light t))
-  (when (file-exists-p "~/.emacs.d/solarized-emacs")
-    (add-to-list 'load-path "~/.emacs.d/solarized-emacs")
-    (add-to-list 'custom-theme-load-path "~/.emacs.d/solarized-emacs")
-    (load-theme 'solarized-light t)))
+  ;; (when (file-exists-p "~/.emacs.d/solarized-emacs")
+  ;;   (add-to-list 'load-path "~/.emacs.d/solarized-emacs")
+  ;;   (add-to-list 'custom-theme-load-path "~/.emacs.d/solarized-emacs")
+  ;;   (load-theme 'solarized-light t))
+  )
 
 (electric-pair-mode 1)
 
