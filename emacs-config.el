@@ -376,15 +376,17 @@
     (add-to-list 'load-path "~/.emacs.d/magit")
     (require 'magit)))
 
-(if (version< "24.4" emacs-version)
-    (use-package solarized-theme
-      :ensure t
-      :config
-      (load-theme 'solarized-light t))
-  (when (file-exists-p "~/.emacs.d/emacs-color-theme-solarized")
-    (add-to-list 'load-path "~/.emacs.d/emacs-color-theme-solarized")
-    (add-to-list 'custom-theme-load-path "~/.emacs.d/emacs-color-theme-solarized")
-    (load-theme 'solarized t)))
+(when (display-graphic-p)
+  (if (version< "24.4" emacs-version)
+      (use-package solarized-theme
+        :ensure t
+        :config
+        (load-theme 'solarized-light t))
+    (when (file-exists-p "~/.emacs.d/emacs-color-theme-solarized")
+      (add-to-list 'load-path "~/.emacs.d/emacs-color-theme-solarized")
+      (add-to-list 'custom-theme-load-path "~/.emacs.d/emacs-color-theme-solarized")
+      (load-theme 'solarized t)))
+  )
 
 (electric-pair-mode 1)
 
