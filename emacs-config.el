@@ -49,16 +49,20 @@
 (eval-when-compile
   (require 'use-package))
 
+(if (file-exists-p "~/src/ergoemacs-mode")
+    (add-to-list 'load-path "~/src/ergoemacs-mode")
+  (add-to-list 'load-path "~/.emacs.d/ergoemacs-mode"))
+
 (use-package ergoemacs-mode
-  :load-path "~/src/ergoemacs-mode"
   :init
   (setq ergoemacs-theme "reduction"
         ergoemacs-keyboard-layout "colemak"
         ergoemacs-beginning-or-end-of-line-and-what 'page
         ergoemacs-smart-paste t))
 
-(use-package electric-operator
-  :ensure t)
+(when (version< "24.4" emacs-version)
+  (use-package electric-operator
+    :ensure t))
 
 (use-package golden-ratio
   :ensure t
@@ -147,10 +151,11 @@
 
 (ido-mode 1)
 
-(use-package ido-completing-read+
-  :ensure t
-  :config
-  (ido-ubiquitous-mode 1))
+(when (version< "24.4" emacs-version)
+  (use-package ido-completing-read+
+    :ensure t
+    :config
+    (ido-ubiquitous-mode 1)))
 
 (use-package smex
   :ensure t
@@ -161,11 +166,6 @@
   :ensure t
   :config
   (ido-vertical-mode))
-
-(use-package smex
-  :ensure t
-  :config
-  (smex-initialize))
 
 (use-package flx-ido
   :ensure t
@@ -249,10 +249,11 @@
   :config
   (indent-guide-global-mode 1))
 
-(use-package page-break-lines
-  :ensure t
-  :config
-  (global-page-break-lines-mode t))
+(when (version<  "24.4" emacs-version)
+  (use-package page-break-lines
+    :ensure t
+    :config
+    (global-page-break-lines-mode t)))
 
 (use-package volatile-highlights
   :ensure t
@@ -267,17 +268,36 @@
 
                                         ;(setq pop-up-frames 'graphic-only)
 
-(use-package tabbar-ruler
-  :ensure t
-  :init
-  (setq tabbar-ruler-global-tabbar t ; If you want tabbar
-        ;;tabbar-ruler-global-ruler t ; if you want a global ruler
-        ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
-        ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
-        ;;tabbar-ruler-popup-scrollbar nil
-        ;; tabbar-ruler-style 'firefox-circle
-	    ) ; Popup scrollbar
-  )
+(if (version< "24.4" emacs-version)
+  (use-package tabbar-ruler
+    :ensure t
+    :init
+    (setq tabbar-ruler-global-tabbar t ; If you want tabbar
+          ;;tabbar-ruler-global-ruler t ; if you want a global ruler
+          ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
+          ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
+          ;;tabbar-ruler-popup-scrollbar nil
+          ;; tabbar-ruler-style 'firefox-circle
+	      ) ; Popup scrollbar
+    )
+  (when (file-exists-p "~/.emacs.d/tabbar")
+    (add-to-list 'load-path "~/.emacs.d/tabbar")
+    (use-package tabbar))
+  (when (file-exists-p "~/.emacs.d/mode-icons")
+    (add-to-list 'load-path "~/.emacs.d/mode-icons")
+    (require 'mode-icons))
+  (when (file-exists-p "~/.emacs.d/tabbar-ruler.el")
+    (add-to-list 'load-path "~/.emacs.d/tabbar-ruler.el")
+    (use-package tabbar-ruler
+      :init
+      (setq tabbar-ruler-global-tabbar t ; If you want tabbar
+            ;;tabbar-ruler-global-ruler t ; if you want a global ruler
+            ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
+            ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
+            ;;tabbar-ruler-popup-scrollbar nil
+            ;; tabbar-ruler-style 'firefox-circle
+	        ) ; Popup scrollbar
+      )))
 
 (setq-default indent-tabs-mode nil)
 (setq-default tab-width 4)
@@ -303,14 +323,15 @@
 (setq auto-save-file-name-transforms
       `((".*" ,temporary-file-directory t)))
 
-(use-package keyfreq
-  :ensure t
-  :init
-  (setq keyfreq-file (expand-file-name ".emacs.keyfreq" user-emacs-directory)
-        keyfreq-file-lock (expand-file-name ".emacs.keyfreq.lock" user-emacs-directory))
-  :config
-  (keyfreq-mode 1)
-  (keyfreq-autosave-mode 1))
+(when (version< "24.4" emacs-version)
+  (use-package keyfreq
+    :ensure t
+    :init
+    (setq keyfreq-file (expand-file-name ".emacs.keyfreq" user-emacs-directory)
+          keyfreq-file-lock (expand-file-name ".emacs.keyfreq.lock" user-emacs-directory))
+    :config
+    (keyfreq-mode 1)
+    (keyfreq-autosave-mode 1)))
 
 (auto-compression-mode t)
 
@@ -336,39 +357,61 @@
 (add-hook 'emacs-lisp-mode-hook #'turn-on-eldoc-mode)
 
 
-(use-package magit
-  :ensure t
-  :commands (magit-status)
-  ;; (add-hook 'magit-mode-hook #'turn-on-magit-gh-pulls)
-  )
+(when (version< "24.4" emacs-version)
+  (use-package magit
+    :ensure t
+    :commands (magit-status)
+    ;; (add-hook 'magit-mode-hook #'turn-on-magit-gh-pulls)
+    ))
 
-(use-package solarized-theme
-  :ensure t
-  :config
-  (load-theme 'solarized-light t))
+(if (version< "24.4" emacs-version)
+    (use-package solarized-theme
+      :ensure t
+      :config
+      (load-theme 'solarized-light t))
+  ;; (when (file-exists-p "~/.emacs.d/solarized-emacs")
+  ;;   (add-to-list 'load-path "~/.emacs.d/solarized-emacs")
+  ;;   (add-to-list 'custom-theme-load-path "~/.emacs.d/solarized-emacs")
+  ;;   (load-theme 'solarized-light t))
+  )
 
 (electric-pair-mode 1)
 
-(use-package multiple-cursors
+(when (version< "24.4" emacs-version)
+  (use-package multiple-cursors
   :ensure t
   :config
   (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-*") 'mc/mark-next-like-this)
-  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-&") 'mc/edit-lines))
+  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-&") 'mc/edit-lines)))
 
 (use-package avy
   :ensure t
   :config
   (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-,") 'avy-goto-word-or-subword-1))
 
-(use-package expand-region
-  :commands (er/expand-region er/contract-region er/mark-inside-quotes)
-  :ensure t
-  :config
-  (define-key ergoemacs-user-keymap (kbd "M-8") 'er/expand-region)
-  (define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes))
+(if (version< "24.4" emacs-version)
+    (use-package expand-region
+      :commands (er/expand-region er/contract-region er/mark-inside-quotes)
+      :ensure t
+      :config
+      (define-key ergoemacs-user-keymap (kbd "M-8") 'er/expand-region)
+      (define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes))
+  (when (file-exists-p "~/.emacs.d/expand-region.el")
+    (add-to-list 'load-path "~/.emacs.d/expand-region.el")
+    (use-package expand-region
+      :commands (er/expand-region er/contract-region er/mark-inside-quotes)
+      :config
+      (define-key ergoemacs-user-keymap (kbd "M-8") 'er/expand-region)
+      (define-key ergoemacs-user-keymap (kbd "M-*") 'er/mark-inside-quotes))))
+
+(if (file-exists-p "~/src/ESS")
+    (progn
+      (add-to-list 'load-path "~/src/ESS/site-lisp")
+      (add-to-list 'load-path "~/src/ESS/lisp"))
+  (add-to-list 'load-path "~/.emacs.d/ESS/site-lisp")
+  (add-to-list 'load-path "~/.emacs.d/ESS/lisp"))
 
 (use-package ess-site
-  :load-path "~/src/ESS/site-lisp"
   :mode (("\\.sp\\'"          . S-mode) ;; re: Don MacQueen <macq@llnl.gov>
            ("/R/.*\\.q\\'"      . R-mode) ;; R/*.q is R code (e.g., in package)
            ("\\.[qsS]\\'"       . S-mode) ;; s,S [see ess-restore-asm-extns above!]
@@ -406,52 +449,64 @@
   :interpreter (("Rscript" . r-mode)
                 ("R" . r-mode))
   :config
-  
-    (setq reftex-file-extensions
-          '(("Snw" "Rnw" "nw" "tex" ".tex" ".ltx") ("bib" ".bib"))
-          TeX-file-extensions
-          '("Snw" "Rnw" "nw" "tex" "sty" "cls" "ltx" "texi" "texinfo")
-          ess-ask-for-ess-directory nil
-          ess-local-process-name "R"
-          ansi-color-for-comint-mode 'filter
-          comint-scroll-to-bottom-on-input t
-          comint-scroll-to-bottom-on-output t
-          comint-move-point-for-output t
-          ess-nuke-trailing-whitespace-p t
-          ess-roxy-str "#'"
-          inferior-R-args "--no-save --quiet"
-          ess-insert-assign nil
-          ess-user-full-name "Matthew L. Fidler"
-          inferior-R-args "--no-save --quiet"
-          ess-roxy-template-alist
-          (list (cons "description"  " ")
-                (cons "details" " ")
-                (cons "param"  "")
-                (cons "return" "")
-                (cons "author" ess-user-full-name)
-                (cons "examples" "")))
+  (require 'ess-site)
+  (require 'ess-autoloads)
 
+  ;; Lets you do 'C-c C-c Sweave' from your Rnw file
+  (defun ergoemacs-add-Sweave ()
+    (add-to-list 'TeX-command-list
+                 '("Sweave" "R CMD Sweave %s"
+                   TeX-run-command nil (latex-mode) :help "Run Sweave") t)
+    (add-to-list 'TeX-command-list
+                 '("LatexSweave" "%l %(mode) %s"
+                   TeX-run-TeX nil (latex-mode) :help "Run Latex after Sweave") t)
+    (setq TeX-command-default "Sweave"))
+  (add-hook 'Rnw-mode-hook 'emacsmate-add-Sweave)
 
-    ;; Lets you do 'C-c C-c Sweave' from your Rnw file
-    (defun ergoemacs-add-Sweave ()
-      (add-to-list 'TeX-command-list
-                   '("Sweave" "R CMD Sweave %s"
-                     TeX-run-command nil (latex-mode) :help "Run Sweave") t)
-      (add-to-list 'TeX-command-list
-                   '("LatexSweave" "%l %(mode) %s"
-                     TeX-run-TeX nil (latex-mode) :help "Run Latex after Sweave") t)
-      (setq TeX-command-default "Sweave"))
-    (add-hook 'Rnw-mode-hook 'emacsmate-add-Sweave)
+  (add-hook 'emacs-startup-hook
+            (lambda()
+              (setq reftex-file-extensions
+                    '(("Snw" "Rnw" "nw" "tex" ".tex" ".ltx") ("bib" ".bib"))
+                    TeX-file-extensions
+                    '("Snw" "Rnw" "nw" "tex" "sty" "cls" "ltx" "texi" "texinfo")
+                    ess-ask-for-ess-directory nil
+                    ess-indent-level 2
+                    ess-local-process-name "R"
+                    ansi-color-for-comint-mode 'filter
+                    comint-scroll-to-bottom-on-input t
+                    comint-scroll-to-bottom-on-output t
+                    comint-move-point-for-output t
+                    ess-nuke-trailing-whitespace-p t
+                    ess-roxy-str "#'"
+                    inferior-R-args "--no-save --quiet"
+                    ess-insert-assign nil
+                    ess-user-full-name "Matthew L. Fidler"
+                    inferior-R-args "--no-save --quiet"
+                    ess-roxy-template-alist
+                    ;; (list (cons "description"  " ")
+                    ;;       (cons "details" " ")
+                    ;;       (cons "param"  "")
+                    ;;       (cons "return" "")
+                    ;;       (cons "author" ess-user-full-name)
+                    ;;       (cons "examples" ""))
+                    )))
 
-    (add-hook 'ess-mode-hook
-	          (lambda()
-		        (ess-set-style 'RStudio 'quiet)
-		        (add-hook 'local-write-file-hooks
-                          (lambda ()
-                            (ess-nuke-trailing-whitespace)))
-                (ess-roxy-mode 1)
-		        (electric-operator-mode)
-                (run-hooks 'prog-mode-hook)))
+  (defun myindent-ess-hook ()
+  (setq ess-indent-level 2)
+  (setq ess-offset-arguments-newline '(prev-line 2))
+)
+(add-hook 'ess-mode-hook 'myindent-ess-hook)
+  (add-hook 'ess-mode-hook
+	        (lambda()
+		      (ess-set-style 'RStudio 'quiet)
+		      (add-hook 'local-write-file-hooks
+                        (lambda ()
+                          (ess-nuke-trailing-whitespace)))
+              (ess-roxy-mode 1)
+		      (electric-operator-mode)
+              (run-hooks 'prog-mode-hook)
+              (set (make-variable-buffer-local 'ess-indent-level) 2)
+              (setq ess-offset-arguments-newline '(prev-line 2))))
     ;; Setup ASCII colors
     (add-hook 'shell-mode-hook 'ansi-color-for-comint-mode-on)
     
@@ -468,22 +523,23 @@
     ;;Remove ESS smart underscore
     (ess-toggle-underscore nil))
 
-(use-package poly-R
-  :ensure t)
+(when (version< "24.4" emacs-version)
+  (use-package poly-R
+    :ensure t)
 
-(use-package poly-markdown
-  :mode ("\\.[Rr][mM][Dd][Hh]\\'"         . poly-markdown+r-mode)
-  :ensure t)
+  (use-package poly-markdown
+    :mode ("\\.[Rr][mM][Dd][Hh]\\'"         . poly-markdown+r-mode)
+    :ensure t)
 
-(use-package flycheck
-  :config
-  (global-flycheck-mode 1))
+  (use-package flycheck
+    :config
+    (global-flycheck-mode 1))
 
-(use-package undo-fu
-  :ensure t
-  :config
-  (global-set-key [remap ergoemacs-redo] 'undo-fu-only-redo)
-  (global-set-key [remap undo] 'undo-fu-only-undo))
+  (use-package undo-fu
+    :ensure t
+    :config
+    (global-set-key [remap ergoemacs-redo] 'undo-fu-only-redo)
+    (global-set-key [remap undo] 'undo-fu-only-undo)))
 
 (use-package yaml-mode
   :ensure t
@@ -492,10 +548,18 @@
           (lambda ()
             (define-key yaml-mode-map "\C-m" 'newline-and-indent))))
 
-(use-package smart-mode-line
-  :ensure t
-  :config
-  (sml/setup))
+(if (version< "24.4" emacs-version)
+    (use-package smart-mode-line
+      :ensure t
+      :config
+      (sml/setup))
+  (when (file-exists-p "~/.emacs.d/rich-minority")
+    (add-to-list 'load-path "~/.emacs.d/rich-minority")
+    (require 'rich-minority))
+  (when (file-exists-p "~/.emacs.d/smart-mode-line")
+    (add-to-list 'load-path "~/.emacs.d/smart-mode-line")
+    (require 'smart-mode-line)
+    (sml/setup)))
 
 (global-set-key (kbd "<f11>") 'toggle-frame-fullscreen)
 (global-set-key (kbd "<f10>") 'menu-bar-mode)
