@@ -381,11 +381,10 @@
       :ensure t
       :config
       (load-theme 'solarized-light t))
-  ;; (when (file-exists-p "~/.emacs.d/solarized-emacs")
-  ;;   (add-to-list 'load-path "~/.emacs.d/solarized-emacs")
-  ;;   (add-to-list 'custom-theme-load-path "~/.emacs.d/solarized-emacs")
-  ;;   (load-theme 'solarized-light t))
-  )
+  (when (file-exists-p "~/.emacs.d/emacs-color-theme-solarized")
+    (add-to-list 'load-path "~/.emacs.d/emacs-color-theme-solarized")
+    (add-to-list 'custom-theme-load-path "~/.emacs.d/emacs-color-theme-solarized")
+    (load-theme 'solarized t)))
 
 (electric-pair-mode 1)
 
