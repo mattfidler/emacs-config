@@ -283,6 +283,9 @@
   (when (file-exists-p "~/.emacs.d/tabbar")
     (add-to-list 'load-path "~/.emacs.d/tabbar")
     (use-package tabbar))
+  (when (file-exists-p "~/.emacs.d/mode-icons")
+    (add-to-list 'load-path "~/.emacs.d/mode-icons")
+    (use-package mode-icons))
   (when (file-exists-p "~/.emacs.d/tabbar-ruler.el")
     (add-to-list 'load-path "~/.emacs.d/tabbar-ruler.el")
     (use-package tabbar-ruler
