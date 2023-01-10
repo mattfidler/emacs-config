@@ -422,6 +422,7 @@
           inferior-R-args "--no-save --quiet"
           ess-insert-assign nil
           ess-user-full-name "Matthew L. Fidler"
+          inferior-R-args "--no-save --quiet"
           ess-roxy-template-alist
           (list (cons "description"  " ")
                 (cons "details" " ")
@@ -505,6 +506,22 @@
 
 (when (file-exists-p "C:/R/Rstudio/bin/gnugrep")
   (add-to-list 'exec-path "C:\\R\\Rstudio\\bin\\gnugrep"))
+(when (file-exists-p "c:/R/hunspell/bin")
+  (add-to-list 'exec-path "c:\\R\\hunspell\\bin")
+  (setq ispell-program-name "c:\\R\\hunspell\\bin\\hunspell.exe"))
+
+(let ((rstudio-bin-1 "C:/R/Rstudio/bin/")
+      (rstudio-bin-2 "C:\\R\\Rstudio\\bin\\"))
+  (when (file-exists-p (concat rstudio-bin-1 "gnugrep"))
+    (add-to-list 'exec-path (concat rstudio-bin-2 "gnugrep")))
+  (when (file-exists-p (concat rstudio-bin-1 "gnudiff"))
+    (add-to-list 'exec-path (concat rstudio-bin-2 "gnudiff")))
+  (when (file-exists-p (concat rstudio-bin-1 "quarto/bin"))
+    (add-to-list 'exec-path (concat rstudio-bin-2 "quarto\\bin")))
+  )
+
+(when (file-exists-p "c:/R/R-4.2.1/bin/x64")
+  (add-to-list 'exec-path "c:\\R\\R-4.2.1\\bin\\x64"))
 
 (ergoemacs-mode 1)
 (provide 'emacs-config)
