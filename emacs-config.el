@@ -346,10 +346,11 @@
     ;; (add-hook 'magit-mode-hook #'turn-on-magit-gh-pulls)
     ))
 
-(use-package solarized-theme
-  :ensure t
-  :config
-  (load-theme 'solarized-light t))
+(when (version< "24.4" emacs-version)
+  (use-package solarized-theme
+    :ensure t
+    :config
+    (load-theme 'solarized-light t)))
 
 (electric-pair-mode 1)
 
