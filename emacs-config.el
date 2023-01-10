@@ -557,6 +557,8 @@
           (lambda ()
             (define-key yaml-mode-map "\C-m" 'newline-and-indent))))
 
+(setq custom-safe-themes t)
+
 (if (version< "24.4" emacs-version)
     (use-package smart-mode-line
       :ensure t
