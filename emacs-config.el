@@ -529,6 +529,8 @@
   (inferior-R-args "--no-save --quiet")
   (ess-insert-assign nil)
   (ess-user-full-name "Matthew L. Fidler")
+  (ess-style 'RStudio)
+  (ess-indent-with-fancy-comments nil)
   (ess-roxy-template-alist
    (list (cons "description"  " ")
          (cons "details" " ")
