@@ -427,38 +427,38 @@
 
 (use-package ess-site
   :mode (("\\.sp\\'"          . S-mode) ;; re: Don MacQueen <macq@llnl.gov>
-           ("/R/.*\\.q\\'"      . R-mode) ;; R/*.q is R code (e.g., in package)
-           ("\\.[qsS]\\'"       . S-mode) ;; s,S [see ess-restore-asm-extns above!]
-           ("\\.ssc\\'"         . S-mode) ;; Splus (>= 4.x) script files.
-           ("\\.SSC\\'"         . S-mode) ;; ditto for windoze
-           ("\\.[rR]\\'"        . R-mode)
-           ("\\.[rR]nw\\'"      . Rnw-mode)
-           ("\\.[sS]nw\\'"      . Snw-mode); currently identical to Rnw-mode
-           ("\\.[rR]profile\\'" . R-mode)
-           ("NAMESPACE\\'"      . R-mode)
-           ("CITATION\\'"       . R-mode)
-           ("\\.omg\\'"         . omegahat-mode)
-           ("\\.hat\\'"         . omegahat-mode)
-           ("\\.lsp\\'"         . XLS-mode)
-           ("\\.do\\'"          . STA-mode)
-           ("\\.ado\\'"         . STA-mode)
-           ("\\.[Ss][Aa][Ss]\\'"        . SAS-mode)
-           ;; Many .log/.lst files, not just SAS
-           ;;("\\.log\\'"       . SAS-log-mode)
-           ;;("\\.[Ll][Ss][Tt]\\'"      . SAS-listing-mode)
-           ("\\.[Ss]t\\'"       . S-transcript-mode)
-           ("\\.Sout"           . S-transcript-mode)
-           ;;("\\.[Rr]t\\'"       . R-transcript-mode)
-           ("\\.[Rr]out"        . R-transcript-mode)
-           ("\\.Rd\\'"          . Rd-mode)
-           ("\\.[Bb][Uu][Gg]\\'"         . ess-bugs-mode)
-           ("\\.[Bb][Oo][Gg]\\'"         . ess-bugs-mode)
-           ("\\.[Bb][Mm][Dd]\\'"         . ess-bugs-mode)
-           ("\\.[Jj][Aa][Gg]\\'"         . ess-jags-mode)
-           ("\\.[Jj][Oo][Gg]\\'"         . ess-jags-mode)
-           ("\\.[Jj][Mm][Dd]\\'"         . ess-jags-mode)
-	       ;;("\\.[Rr][mM][Dd]\\'"         . poly-markdown+r-mode)
-	       )
+         ("/R/.*\\.q\\'"      . R-mode) ;; R/*.q is R code (e.g., in package)
+         ("\\.[qsS]\\'"       . S-mode) ;; s,S [see ess-restore-asm-extns above!]
+         ("\\.ssc\\'"         . S-mode) ;; Splus (>= 4.x) script files.
+         ("\\.SSC\\'"         . S-mode) ;; ditto for windoze
+         ("\\.[rR]\\'"        . R-mode)
+         ("\\.[rR]nw\\'"      . Rnw-mode)
+         ("\\.[sS]nw\\'"      . Snw-mode); currently identical to Rnw-mode
+         ("\\.[rR]profile\\'" . R-mode)
+         ("NAMESPACE\\'"      . R-mode)
+         ("CITATION\\'"       . R-mode)
+         ("\\.omg\\'"         . omegahat-mode)
+         ("\\.hat\\'"         . omegahat-mode)
+         ("\\.lsp\\'"         . XLS-mode)
+         ("\\.do\\'"          . STA-mode)
+         ("\\.ado\\'"         . STA-mode)
+         ("\\.[Ss][Aa][Ss]\\'"        . SAS-mode)
+         ;; Many .log/.lst files, not just SAS
+         ;;("\\.log\\'"       . SAS-log-mode)
+         ;;("\\.[Ll][Ss][Tt]\\'"      . SAS-listing-mode)
+         ("\\.[Ss]t\\'"       . S-transcript-mode)
+         ("\\.Sout"           . S-transcript-mode)
+         ;;("\\.[Rr]t\\'"       . R-transcript-mode)
+         ("\\.[Rr]out"        . R-transcript-mode)
+         ("\\.Rd\\'"          . Rd-mode)
+         ("\\.[Bb][Uu][Gg]\\'"         . ess-bugs-mode)
+         ("\\.[Bb][Oo][Gg]\\'"         . ess-bugs-mode)
+         ("\\.[Bb][Mm][Dd]\\'"         . ess-bugs-mode)
+         ("\\.[Jj][Aa][Gg]\\'"         . ess-jags-mode)
+         ("\\.[Jj][Oo][Gg]\\'"         . ess-jags-mode)
+         ("\\.[Jj][Mm][Dd]\\'"         . ess-jags-mode)
+	     ;;("\\.[Rr][mM][Dd]\\'"         . poly-markdown+r-mode)
+	     )
   :commands (R)
   :interpreter (("Rscript" . r-mode)
                 ("R" . r-mode))
@@ -483,33 +483,13 @@
                     '(("Snw" "Rnw" "nw" "tex" ".tex" ".ltx") ("bib" ".bib"))
                     TeX-file-extensions
                     '("Snw" "Rnw" "nw" "tex" "sty" "cls" "ltx" "texi" "texinfo")
-                    ess-ask-for-ess-directory nil
-                    ess-indent-level 2
-                    ess-local-process-name "R"
-                    ansi-color-for-comint-mode 'filter
-                    comint-scroll-to-bottom-on-input t
-                    comint-scroll-to-bottom-on-output t
-                    comint-move-point-for-output t
-                    ess-nuke-trailing-whitespace-p t
-                    ess-roxy-str "#'"
-                    inferior-R-args "--no-save --quiet"
-                    ess-insert-assign nil
-                    ess-user-full-name "Matthew L. Fidler"
-                    inferior-R-args "--no-save --quiet"
-                    ess-roxy-template-alist
-                    ;; (list (cons "description"  " ")
-                    ;;       (cons "details" " ")
-                    ;;       (cons "param"  "")
-                    ;;       (cons "return" "")
-                    ;;       (cons "author" ess-user-full-name)
-                    ;;       (cons "examples" ""))
                     )))
 
   (defun myindent-ess-hook ()
-  (setq ess-indent-level 2)
-  (setq ess-offset-arguments-newline '(prev-line 2))
-)
-(add-hook 'ess-mode-hook 'myindent-ess-hook)
+    (setq ess-indent-level 2)
+    (setq ess-offset-arguments-newline '(prev-line 2))
+    )
+  (add-hook 'ess-mode-hook 'myindent-ess-hook)
   (add-hook 'ess-mode-hook
 	        (lambda()
 		      (ess-set-style 'RStudio 'quiet)
@@ -521,21 +501,42 @@
               (run-hooks 'prog-mode-hook)
               (set (make-variable-buffer-local 'ess-indent-level) 2)
               (setq ess-offset-arguments-newline '(prev-line 2))))
-    ;; Setup ASCII colors
-    (add-hook 'shell-mode-hook 'ansi-color-for-comint-mode-on)
-    
-    (setq ansi-color-for-comint-mode 'filter
-          comint-scroll-to-bottom-on-input t
-          comint-scroll-to-bottom-on-output t
-          comint-move-point-for-output t)
-    (add-to-list 'comint-output-filter-functions 'ansi-color-process-output)
+  ;; Setup ASCII colors
+  (add-hook 'shell-mode-hook 'ansi-color-for-comint-mode-on)
+  
+  (setq ansi-color-for-comint-mode 'filter
+        comint-scroll-to-bottom-on-input t
+        comint-scroll-to-bottom-on-output t
+        comint-move-point-for-output t)
+  (add-to-list 'comint-output-filter-functions 'ansi-color-process-output)
 
-    (add-hook 'inferior-ess-mode-hook
-              (lambda()
-                (ansi-color-for-comint-mode-on)))
+  (add-hook 'inferior-ess-mode-hook
+            (lambda()
+              (ansi-color-for-comint-mode-on)))
 
-    ;;Remove ESS smart underscore
-    (ess-toggle-underscore nil))
+  ;;Remove ESS smart underscore
+  (ess-toggle-underscore nil)
+  :custom
+  (ess-ask-for-ess-directory nil)
+  (ess-indent-level 2)
+  (ess-local-process-name "R")
+  (ansi-color-for-comint-mode 'filter)
+  (comint-scroll-to-bottom-on-input t)
+  (comint-scroll-to-bottom-on-output t)
+  (comint-move-point-for-output t)
+  (ess-nuke-trailing-whitespace-p t)
+  (ess-roxy-str "#'")
+  (inferior-R-args "--no-save --quiet")
+  (ess-insert-assign nil)
+  (ess-user-full-name "Matthew L. Fidler")
+  (ess-roxy-template-alist
+   (list (cons "description"  " ")
+         (cons "details" " ")
+         (cons "param"  "")
+         (cons "return" "")
+         (cons "export" "")
+         (cons "author" ess-user-full-name)
+         (cons "examples" ""))))
 
 (when (version< "24.4" emacs-version)
   (use-package poly-R
