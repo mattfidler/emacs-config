@@ -46,8 +46,15 @@
 ;; and `package-pinned-packages`. Most users will not need or want to do this.
 ;;(add-to-list 'package-archives '("melpa-stable" . "https://stable.melpa.org/packages/") t)
 (package-initialize)
+
+(unless (package-installed-p 'use-package)
+  (package-refresh-contents)
+  (package-install 'use-package))
+(setq use-package-always-ensure t)
+
 (eval-when-compile
   (require 'use-package))
+
 
 (if (file-exists-p "~/src/ergoemacs-mode")
     (add-to-list 'load-path "~/src/ergoemacs-mode")
@@ -212,11 +219,21 @@
     (use-package company
       :ensure t
       :init
-      (add-hook 'after-init-hook 'global-company-mode))
+      (add-hook 'after-init-hook 'global-company-mode)
+      (setq company-selection-wrap-around t
+            company-tooltip-align-annotations t
+            company-idle-delay 0.45
+            company-minimum-prefix-length 3
+            company-tooltip-limit 10))
   (when (file-exists-p "~/.emacs.d/company-mode")
     (add-to-list 'load-path "~/.emacs.d/company-mode")
     (require 'company)
-    (add-hook 'after-init-hook 'global-company-mode)))
+    (add-hook 'after-init-hook 'global-company-mode)
+    (setq company-selection-wrap-around t
+          company-tooltip-align-annotations t
+          company-idle-delay 0.45
+          company-minimum-prefix-length 3
+          company-tooltip-limit 10)))
 
 (setq set-mark-command-repeat-pop t)
 
@@ -425,7 +442,7 @@
   (add-to-list 'load-path "~/.emacs.d/ESS/site-lisp")
   (add-to-list 'load-path "~/.emacs.d/ESS/lisp"))
 
-(use-package ess-site
+(use-package ess
   :mode (("\\.sp\\'"          . S-mode) ;; re: Don MacQueen <macq@llnl.gov>
          ("/R/.*\\.q\\'"      . R-mode) ;; R/*.q is R code (e.g., in package)
          ("\\.[qsS]\\'"       . S-mode) ;; s,S [see ess-restore-asm-extns above!]
@@ -487,8 +504,7 @@
 
   (defun myindent-ess-hook ()
     (setq ess-indent-level 2)
-    (setq ess-offset-arguments-newline '(prev-line 2))
-    )
+    (setq ess-offset-arguments-newline '(prev-line 2)))
   (add-hook 'ess-mode-hook 'myindent-ess-hook)
   (add-hook 'ess-mode-hook
 	        (lambda()
