@@ -60,6 +60,8 @@
     (add-to-list 'load-path "~/src/ergoemacs-mode")
   (add-to-list 'load-path "~/.emacs.d/ergoemacs-mode"))
 
+(require 'ergoemacs-mode)
+
 (use-package ergoemacs-mode
   :init
   (setq ergoemacs-theme "reduction"
@@ -296,35 +298,33 @@
 
 (when (display-graphic-p)
   (if (version< "24.4" emacs-version)
-      (use-package tabbar-ruler
-        :ensure t
-        :init
-        (setq tabbar-ruler-global-tabbar t ; If you want tabbar
-              ;;tabbar-ruler-global-ruler t ; if you want a global ruler
-              ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
-              ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
-              ;;tabbar-ruler-popup-scrollbar nil
-              ;; tabbar-ruler-style 'firefox-circle
-	          ) ; Popup scrollbar
-        )
-    (when (file-exists-p "~/.emacs.d/tabbar")
-      (add-to-list 'load-path "~/.emacs.d/tabbar")
-      (use-package tabbar))
-    (when (file-exists-p "~/.emacs.d/mode-icons")
-      (add-to-list 'load-path "~/.emacs.d/mode-icons")
-      (require 'mode-icons))
-    (when (file-exists-p "~/.emacs.d/tabbar-ruler.el")
-      (add-to-list 'load-path "~/.emacs.d/tabbar-ruler.el")
-      (use-package tabbar-ruler
-        :init
-        (setq tabbar-ruler-global-tabbar t ; If you want tabbar
-              ;;tabbar-ruler-global-ruler t ; if you want a global ruler
-              ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
-              ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
-              ;;tabbar-ruler-popup-scrollbar nil
-              ;; tabbar-ruler-style 'firefox-circle
-	          ) ; Popup scrollbar
-        ))))
+      :ensure t
+      :init
+      (setq tabbar-ruler-global-tabbar t ; If you want tabbar
+            ;;tabbar-ruler-global-ruler t ; if you want a global ruler
+            ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
+            ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
+            ;;tabbar-ruler-popup-scrollbar nil
+            ;; tabbar-ruler-style 'firefox-circle
+            ) ; Popup scrollbar
+      )
+  (when (file-exists-p "~/.emacs.d/tabbar")
+    (add-to-list 'load-path "~/.emacs.d/tabbar")
+    (require 'tabbar))
+  (when (file-exists-p "~/.emacs.d/mode-icons")
+    (add-to-list 'load-path "~/.emacs.d/mode-icons")
+    (require 'mode-icons))
+  (when (file-exists-p "~/.emacs.d/tabbar-ruler.el")
+    (add-to-list 'load-path "~/.emacs.d/tabbar-ruler.el")
+    (require 'tabbar-ruler)
+    (setq tabbar-ruler-global-tabbar t ; If you want tabbar
+          ;;tabbar-ruler-global-ruler t ; if you want a global ruler
+          ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
+          ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
+          ;;tabbar-ruler-popup-scrollbar nil
+          ;; tabbar-ruler-style 'firefox-circle
+          ) ; Popup scrollbar
+    ))
 
 (setq-default indent-tabs-mode nil)
 (setq-default tab-width 4)
@@ -446,8 +446,9 @@
       (add-to-list 'load-path "~/src/ESS/lisp"))
   (add-to-list 'load-path "~/.emacs.d/ESS/site-lisp")
   (add-to-list 'load-path "~/.emacs.d/ESS/lisp"))
-
+;(unwind-protect (require 'ess)
 (use-package ess
+  :ensure nil
   :mode (("\\.sp\\'"          . S-mode) ;; re: Don MacQueen <macq@llnl.gov>
          ("/R/.*\\.q\\'"      . R-mode) ;; R/*.q is R code (e.g., in package)
          ("\\.[qsS]\\'"       . S-mode) ;; s,S [see ess-restore-asm-extns above!]
@@ -634,4 +635,3 @@
 ;; Local Variables:
 ;; coding: utf-8-emacs
 ;; End:
-
