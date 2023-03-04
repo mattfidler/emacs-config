@@ -399,12 +399,12 @@
       (use-package solarized-theme
         :ensure t
         :config
-        (load-theme 'solarized-dark t)
+        (load-theme 'solarized-light t)
         (add-hook 'after-make-frame-functions
                   (lambda (frame)
                     (select-frame frame)
                     (when (display-graphic-p frame)
-                      (load-theme 'solarized-dark t)))))
+                      (load-theme 'solarized-light t)))))
     (when (file-exists-p "~/.emacs.d/emacs-color-theme-solarized")
       (add-to-list 'load-path "~/.emacs.d/emacs-color-theme-solarized")
       (add-to-list 'custom-theme-load-path "~/.emacs.d/emacs-color-theme-solarized")
