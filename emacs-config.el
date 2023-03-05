@@ -62,6 +62,8 @@
 
 (require 'ergoemacs-mode)
 
+(use-package xterm-color)
+
 (use-package ergoemacs-mode
   :init
   (setq ergoemacs-theme "reduction"
@@ -531,11 +533,7 @@
         comint-scroll-to-bottom-on-output t
         comint-move-point-for-output t)
   (add-to-list 'comint-output-filter-functions 'ansi-color-process-output)
-
-  (add-hook 'inferior-ess-mode-hook
-            (lambda()
-              (ansi-color-for-comint-mode-on)))
-
+  
   ;;Remove ESS smart underscore
   (ess-toggle-underscore nil)
   :custom
@@ -627,6 +625,10 @@
 
 (when (file-exists-p "c:/R/R-4.2.1/bin/x64")
   (add-to-list 'exec-path "c:\\R\\R-4.2.1\\bin\\x64"))
+
+(add-hook 'inferior-ess-mode-hook
+            (lambda ()
+              (add-hook 'comint-preoutput-filter-functions 'xterm-color-filter nil t)))
 
 (ergoemacs-mode 1)
 (provide 'emacs-config)
