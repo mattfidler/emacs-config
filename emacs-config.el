@@ -1,5 +1,5 @@
 ;;; emacs-config.el --- Sample emacs configuration
-;; 
+;;
 ;; Filename: emacs-config.el
 ;; Description: Suggested ergoemacs-mode configuration
 ;; Author: Matthew L. Fidler
@@ -7,38 +7,38 @@
 ;; Created: Fri Sep  4 09:37:09 2015 (-0500)
 ;; Version: 0.1
 ;; Package-Requires: (ergoemacs-mode)
-;; 
+;;
 ;; Features that might be required by this library:
 ;;
 ;;   None
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 
+;;
 ;;; Commentary:
-;; 
-;; 
+;;
+;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 
+;;
 ;;; Change Log:
-;; 
-;; 
+;;
+;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 
+;;
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or (at
 ;; your option) any later version.
-;; 
+;;
 ;; This program is distributed in the hope that it will be useful, but
 ;; WITHOUT ANY WARRANTY; without even the implied warranty of
 ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;; General Public License for more details.
-;; 
+;;
 ;; You should have received a copy of the GNU General Public License
 ;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
-;; 
+;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 
+;;
 ;;; Code:
 (require 'package)
 (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
@@ -61,8 +61,6 @@
   (add-to-list 'load-path "~/.emacs.d/ergoemacs-mode"))
 
 (require 'ergoemacs-mode)
-
-(use-package xterm-color)
 
 (use-package ergoemacs-mode
   :init
@@ -527,13 +525,13 @@
               (setq ess-offset-arguments-newline '(prev-line 2))))
   ;; Setup ASCII colors
   (add-hook 'shell-mode-hook 'ansi-color-for-comint-mode-on)
-  
+
   (setq ansi-color-for-comint-mode 'filter
         comint-scroll-to-bottom-on-input t
         comint-scroll-to-bottom-on-output t
         comint-move-point-for-output t)
   (add-to-list 'comint-output-filter-functions 'ansi-color-process-output)
-  
+
   ;;Remove ESS smart underscore
   (ess-toggle-underscore nil)
   :custom
@@ -627,8 +625,8 @@
   (add-to-list 'exec-path "c:\\R\\R-4.2.1\\bin\\x64"))
 
 (add-hook 'inferior-ess-mode-hook
-            (lambda ()
-              (add-hook 'comint-preoutput-filter-functions 'xterm-color-filter nil t)))
+          (lambda ()
+            (ansi-color-for-comint-mode-on)))
 
 (ergoemacs-mode 1)
 (provide 'emacs-config)
@@ -637,4 +635,3 @@
 ;; Local Variables:
 ;; coding: utf-8-emacs
 ;; End:
-
