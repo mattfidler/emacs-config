@@ -621,8 +621,8 @@
     (add-to-list 'exec-path (concat rstudio-bin-2 "quarto\\bin")))
   )
 
-(when (file-exists-p "c:/R/R-4.2.1/bin/x64")
-  (add-to-list 'exec-path "c:\\R\\R-4.2.1\\bin\\x64"))
+(when (file-exists-p "c:/R/R-4.3.0/bin/x64")
+  (add-to-list 'exec-path "c:\\R\\R-4.3.0\\bin\\x64"))
 
 (add-hook 'inferior-ess-mode-hook
           (lambda ()
