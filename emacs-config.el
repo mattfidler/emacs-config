@@ -55,7 +55,6 @@
 (eval-when-compile
   (require 'use-package))
 
-
 (if (file-exists-p "~/src/ergoemacs-mode")
     (add-to-list 'load-path "~/src/ergoemacs-mode")
   (add-to-list 'load-path "~/.emacs.d/ergoemacs-mode"))
@@ -96,10 +95,10 @@
                                      "gdb-memory-mode"
                                      "restclient-mode"
                                      "speedbar-mode"
-				                     "minimap-mode"))
+                                     "minimap-mode"))
   (setq golden-ratio-extra-commands
-	    (append golden-ratio-extra-commands
-		        '(ace-window
+        (append golden-ratio-extra-commands
+                '(ace-window
                   switch-window
                   delete-other-window
                   ace-delete-window
@@ -241,7 +240,8 @@
 
 (savehist-mode 1)
 
-(global-linum-mode 1)
+(when (boundp 'global-linum-mode)
+  (global-linum-mode 1))
 (global-subword-mode 1)
 
 (defun ergoemacs-remove-elc-on-save ()
@@ -288,11 +288,45 @@
   :config
   (volatile-highlights-mode))
 
+(use-package mode-icons
+  :ensure t
+  :config
+  (mode-icons-mode))
+
+(use-package tabbar
+  :ensure t)
+
+(use-package tabbar-ruler
+  :ensure t
+  (setq tabbar-ruler-global-tabbar t ; If you want tabbar
+        ;;tabbar-ruler-global-ruler t ; if you want a global ruler
+        ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
+        ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
+        ;;tabbar-ruler-popup-scrollbar nil
+        ;; tabbar-ruler-style 'firefox-circle
+        ) ; Popup scrollbar
+  (require 'tabbar)
+  (require 'tabbar-ruler))
+
+(use-package snap-indent
+  :ensure t
+  :hook (prog-mode . snap-indent-mode)
+  :custom ((snap-indent-format 'untabify)
+           (snap-indent-on-save t)))
+
 (global-visual-line-mode 1)
 
 (global-hl-line-mode 1)
 
 (modify-all-frames-parameters (list (cons 'cursor-type 'bar)))
+
+
+(defun del-trailing()
+  "Delete trailing whitespace."
+  (add-hook 'write-file-hooks 'delete-trailing-whitespace))
+
+(add-hook 'prog-mode-hook 'del-trailing)
+
 
                                         ;(setq pop-up-frames 'graphic-only)
 
@@ -415,10 +449,10 @@
 
 (when (version< "24.4" emacs-version)
   (use-package multiple-cursors
-  :ensure t
-  :config
-  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-*") 'mc/mark-next-like-this)
-  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-&") 'mc/edit-lines)))
+    :ensure t
+    :config
+    (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-*") 'mc/mark-next-like-this)
+    (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-&") 'mc/edit-lines)))
 
 (use-package avy
   :ensure t
@@ -446,7 +480,7 @@
       (add-to-list 'load-path "~/src/ESS/lisp"))
   (add-to-list 'load-path "~/.emacs.d/ESS/site-lisp")
   (add-to-list 'load-path "~/.emacs.d/ESS/lisp"))
-;(unwind-protect (require 'ess)
+                                        ;(unwind-protect (require 'ess)
 (use-package ess
   :ensure nil
   :mode (("\\.sp\\'"          . S-mode) ;; re: Don MacQueen <macq@llnl.gov>
@@ -480,8 +514,8 @@
          ("\\.[Jj][Aa][Gg]\\'"         . ess-jags-mode)
          ("\\.[Jj][Oo][Gg]\\'"         . ess-jags-mode)
          ("\\.[Jj][Mm][Dd]\\'"         . ess-jags-mode)
-	     ;;("\\.[Rr][mM][Dd]\\'"         . poly-markdown+r-mode)
-	     )
+         ;;("\\.[Rr][mM][Dd]\\'"         . poly-markdown+r-mode)
+         )
   :commands (R)
   :interpreter (("Rscript" . r-mode)
                 ("R" . r-mode))
@@ -513,13 +547,13 @@
     (setq ess-offset-arguments-newline '(prev-line 2)))
   (add-hook 'ess-mode-hook 'myindent-ess-hook)
   (add-hook 'ess-mode-hook
-	        (lambda()
-		      (ess-set-style 'RStudio 'quiet)
-		      (add-hook 'local-write-file-hooks
+            (lambda()
+              (ess-set-style 'RStudio 'quiet)
+              (add-hook 'local-write-file-hooks
                         (lambda ()
                           (ess-nuke-trailing-whitespace)))
               (ess-roxy-mode 1)
-		      (electric-operator-mode)
+              (electric-operator-mode)
               (run-hooks 'prog-mode-hook)
               (set (make-variable-buffer-local 'ess-indent-level) 2)
               (setq ess-offset-arguments-newline '(prev-line 2))))
@@ -580,8 +614,8 @@
   :ensure t
   :config
   (add-hook 'yaml-mode-hook
-          (lambda ()
-            (define-key yaml-mode-map "\C-m" 'newline-and-indent))))
+            (lambda ()
+              (define-key yaml-mode-map "\C-m" 'newline-and-indent))))
 
 (setq custom-safe-themes t)
 
