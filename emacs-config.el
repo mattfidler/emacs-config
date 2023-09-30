@@ -240,8 +240,13 @@
 
 (savehist-mode 1)
 
-(when (boundp 'global-linum-mode)
-  (global-linum-mode 1))
+(if (version< "29.0" emacs-version)
+    (add-hook 'prog-mode-hook #'display-line-numbers-mode)
+  (global-linum-mode 1)
+  (use-package linum-off
+    :ensure t
+    :config
+    (global-linum-mode 1)))
 (global-subword-mode 1)
 
 (defun ergoemacs-remove-elc-on-save ()
@@ -312,7 +317,7 @@
   :ensure t
   :hook (prog-mode . snap-indent-mode)
   :custom ((snap-indent-format 'untabify)
-           (snap-indent-on-save t)))
+           (snap-indent-on-save nil)))
 
 (global-visual-line-mode 1)
 
@@ -396,10 +401,6 @@
 
 (auto-compression-mode t)
 
-(use-package linum-off
-  :ensure t
-  :config
-  (global-linum-mode 1))
 
 (global-subword-mode 1)
 
