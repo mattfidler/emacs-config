@@ -285,7 +285,7 @@
               company-tooltip-limit 10))
       (use-package company-box)
       :init
-      (add-hook 'after-init-hook 'global-company-box-mode))
+      (add-hook 'prog-mode-hook 'company-box-mode))
   (when (file-exists-p "~/.emacs.d/company-mode")
     (add-to-list 'load-path "~/.emacs.d/company-mode")
     (require 'company)
