@@ -180,6 +180,25 @@
   :config
   (flx-ido-mode 1))
 
+(use-package ligature
+  :ensure t
+  :config
+  ;; Enable the www ligature in every possible major mode
+  (ligature-set-ligatures 't '("www"))
+
+  ;; Enable ligatures in programming modes
+  (ligature-set-ligatures 'prog-mode '("www" "**" "***" "**/" "*>" "*/" "\\\\" "\\\\\\" "{-" "::"
+                                       ":::" ":=" "!!" "!=" "!==" "-}" "----" "-->" "->" "->>"
+                                       "-<" "-<<" "-~" "#{" "#[" "##" "###" "####" "#(" "#?" "#_"
+                                       "#_(" ".-" ".=" ".." "..<" "..." "?=" "??" ";;" "/*" "/**"
+                                       "/=" "/==" "/>" "//" "///" "&&" "||" "||=" "|=" "|>" "^=" "$>"
+                                       "++" "+++" "+>" "=:=" "==" "===" "==>" "=>" "=>>" "<="
+                                       "=<<" "=/=" ">-" ">=" ">=>" ">>" ">>-" ">>=" ">>>" "<*"
+                                       "<*>" "<|" "<|>" "<$" "<$>" "<!--" "<-" "<--" "<->" "<+"
+                                       "<+>" "<=" "<==" "<=>" "<=<" "<>" "<<" "<<-" "<<=" "<<<"
+                                       "<~" "<~~" "</" "</>" "~@" "~-" "~>" "~~" "~~>" "%%"))
+  (global-ligature-mode 't))
+
 (setq-default indent-tabs-mode nil
               indicate-empty-lines t
               imenu-auto-rescan t
@@ -434,12 +453,16 @@
       (use-package solarized-theme
         :ensure t
         :config
-        (load-theme 'solarized-light t)
-        (add-hook 'after-make-frame-functions
-                  (lambda (frame)
-                    (select-frame frame)
-                    (when (display-graphic-p frame)
-                      (load-theme 'solarized-light t)))))
+        (if (daemonp)
+            (add-hook 'after-make-frame-functions
+                      (defun my/theme-init-daemon (frame)
+                        (with-selected-frame frame
+                          (load-theme 'solarized-light t))
+                        ;; Run this hook only once.
+                        (remove-hook 'after-make-frame-functions
+                                     #'my/theme-init-daemon)
+                        (fmakunbound 'my/theme-init-daemon)))
+          (load-theme 'solarized-light t)))
     (when (file-exists-p "~/.emacs.d/emacs-color-theme-solarized")
       (add-to-list 'load-path "~/.emacs.d/emacs-color-theme-solarized")
       (add-to-list 'custom-theme-load-path "~/.emacs.d/emacs-color-theme-solarized")
