@@ -41,6 +41,18 @@
 ;;
 ;;; Code:
 
+(unless (package-installed-p 'quelpa)
+  (with-temp-buffer
+    (url-insert-file-contents "https://raw.githubusercontent.com/quelpa/quelpa/master/quelpa.el")
+    (eval-buffer)
+    (quelpa-self-upgrade)))
+
+(quelpa
+ '(quelpa-use-package
+   :fetcher git
+   :url "https://github.com/quelpa/quelpa-use-package.git"))
+(require 'quelpa-use-package)
+
 (require 'package)
 (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
 ;; Comment/uncomment this line to enable MELPA Stable if desired.  See `package-archive-priorities`
@@ -68,6 +80,27 @@
         ergoemacs-keyboard-layout "colemak"
         ergoemacs-beginning-or-end-of-line-and-what 'page
         ergoemacs-smart-paste t))
+
+(use-package 'editorconfig)
+(use-package 'jsonrpc)
+
+
+(use-package copilot
+  :quelpa (copilot :fetcher github
+                   :repo "copilot-emacs/copilot.el"
+                   :branch "main"
+                   :files ("*.el"))
+  :config
+  (when (file-exists-p "/usr/local/bin/node")
+    (setq copilot-node-executable "/usr/local/bin/node"))
+  (add-hook 'prog-mode-hook 'copilot-mode)
+  (define-key copilot-mode-map (kbd "M-C-<next>") #'copilot-next-completion)
+  (define-key copilot-mode-map (kbd "M-C-<prior>") #'copilot-previous-completion)
+  (define-key copilot-mode-map (kbd "M-C-<right>") #'copilot-accept-completion-by-word)
+  (define-key copilot-mode-map (kbd "M-C-<down>") #'copilot-accept-completion-by-line)
+  (define-key copilot-mode-map (kbd "M-C-<return>") #'copilot-complete)
+  (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
+  (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion))
 
 (when (version< "24.4" emacs-version)
   (use-package electric-operator
@@ -240,15 +273,19 @@
   (use-package powershell))
 
 (if (version< "24.4" emacs-version)
-    (use-package company
-      :ensure t
+    (progn
+      (use-package company
+        :ensure t
+        :init
+
+        (setq company-selection-wrap-around t
+              company-tooltip-align-annotations t
+              company-idle-delay 0.45
+              company-minimum-prefix-length 3
+              company-tooltip-limit 10))
+      (use-package company-box)
       :init
-      (add-hook 'after-init-hook 'global-company-mode)
-      (setq company-selection-wrap-around t
-            company-tooltip-align-annotations t
-            company-idle-delay 0.45
-            company-minimum-prefix-length 3
-            company-tooltip-limit 10))
+      (add-hook 'after-init-hook 'global-company-box-mode))
   (when (file-exists-p "~/.emacs.d/company-mode")
     (add-to-list 'load-path "~/.emacs.d/company-mode")
     (require 'company)
