@@ -40,6 +40,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
 ;;; Code:
+
 (require 'package)
 (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
 ;; Comment/uncomment this line to enable MELPA Stable if desired.  See `package-archive-priorities`
@@ -215,6 +216,9 @@
       save-place t)
 (transient-mark-mode t)
 (defalias 'yes-or-no-p 'y-or-n-p)
+
+(when (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
+  (use-package powershell))
 
 (if (version< "24.4" emacs-version)
     (use-package company
@@ -646,6 +650,13 @@
   (add-to-list 'exec-path "c:\\R\\hunspell\\bin")
   (setq ispell-program-name "c:\\R\\hunspell\\bin\\hunspell.exe"))
 
+;; (when (file-exists-p "c:/Rtools43/usr/bin")
+;;   (add-to-list 'exec-path "c:\\Rtools43\\usr\\bin"))
+
+
+(when (file-exists-p "c:/R/R-4.3.0/bin/x64")
+  (add-to-list 'exec-path "c:\\R\\R-4.3.0\\bin\\x64"))
+
 (let ((rstudio-bin-1 "C:/R/Rstudio/bin/")
       (rstudio-bin-2 "C:\\R\\Rstudio\\bin\\"))
   (when (file-exists-p (concat rstudio-bin-1 "gnugrep"))
@@ -653,11 +664,8 @@
   (when (file-exists-p (concat rstudio-bin-1 "gnudiff"))
     (add-to-list 'exec-path (concat rstudio-bin-2 "gnudiff")))
   (when (file-exists-p (concat rstudio-bin-1 "quarto/bin"))
-    (add-to-list 'exec-path (concat rstudio-bin-2 "quarto\\bin")))
-  )
+    (add-to-list 'exec-path (concat rstudio-bin-2 "quarto\\bin"))))
 
-(when (file-exists-p "c:/R/R-4.3.0/bin/x64")
-  (add-to-list 'exec-path "c:\\R\\R-4.3.0\\bin\\x64"))
 
 (add-hook 'inferior-ess-mode-hook
           (lambda ()
