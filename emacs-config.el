@@ -41,17 +41,19 @@
 ;;
 ;;; Code:
 
-(unless (package-installed-p 'quelpa)
-  (with-temp-buffer
-    (url-insert-file-contents "https://raw.githubusercontent.com/quelpa/quelpa/master/quelpa.el")
-    (eval-buffer)
-    (quelpa-self-upgrade)))
+(unless (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
+  (unless (package-installed-p 'quelpa)
+    (with-temp-buffer
+      (url-insert-file-contents "https://raw.githubusercontent.com/quelpa/quelpa/master/quelpa.el")
+      (eval-buffer)
+      (quelpa-self-upgrade)))
 
-(quelpa
- '(quelpa-use-package
-   :fetcher git
-   :url "https://github.com/quelpa/quelpa-use-package.git"))
-(require 'quelpa-use-package)
+  (quelpa
+   '(quelpa-use-package
+     :fetcher git
+     :url "https://github.com/quelpa/quelpa-use-package.git"))
+  (require 'quelpa-use-package))
+
 
 (require 'package)
 (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
@@ -85,22 +87,23 @@
 (use-package 'jsonrpc)
 
 
-(use-package copilot
-  :quelpa (copilot :fetcher github
-                   :repo "copilot-emacs/copilot.el"
-                   :branch "main"
-                   :files ("*.el"))
-  :config
-  (when (file-exists-p "/usr/local/bin/node")
-    (setq copilot-node-executable "/usr/local/bin/node"))
-  (add-hook 'prog-mode-hook 'copilot-mode)
-  (define-key copilot-mode-map (kbd "M-C-<next>") #'copilot-next-completion)
-  (define-key copilot-mode-map (kbd "M-C-<prior>") #'copilot-previous-completion)
-  (define-key copilot-mode-map (kbd "M-C-<right>") #'copilot-accept-completion-by-word)
-  (define-key copilot-mode-map (kbd "M-C-<down>") #'copilot-accept-completion-by-line)
-  (define-key copilot-mode-map (kbd "M-C-<return>") #'copilot-complete)
-  (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-  (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion))
+(unless (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
+  (use-package copilot
+    :quelpa (copilot :fetcher github
+                     :repo "copilot-emacs/copilot.el"
+                     :branch "main"
+                     :files ("*.el"))
+    :config
+    (when (file-exists-p "/usr/local/bin/node")
+      (setq copilot-node-executable "/usr/local/bin/node"))
+    (add-hook 'prog-mode-hook 'copilot-mode)
+    (define-key copilot-mode-map (kbd "M-C-<next>") #'copilot-next-completion)
+    (define-key copilot-mode-map (kbd "M-C-<prior>") #'copilot-previous-completion)
+    (define-key copilot-mode-map (kbd "M-C-<right>") #'copilot-accept-completion-by-word)
+    (define-key copilot-mode-map (kbd "M-C-<down>") #'copilot-accept-completion-by-line)
+    (define-key copilot-mode-map (kbd "M-C-<return>") #'copilot-complete)
+    (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
+    (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)))
 
 (when (version< "24.4" emacs-version)
   (use-package electric-operator
