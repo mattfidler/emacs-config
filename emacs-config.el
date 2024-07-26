@@ -52,7 +52,173 @@
    '(quelpa-use-package
      :fetcher git
      :url "https://github.com/quelpa/quelpa-use-package.git"))
-  (require 'quelpa-use-package))
+  (require 'quelpa-use-package)
+
+  (defvar bootstrap-version)
+  (let ((bootstrap-file
+         (expand-file-name
+          "straight/repos/straight.el/bootstrap.el"
+          (or (bound-and-true-p straight-base-dir)
+              user-emacs-directory)))
+        (bootstrap-version 7))
+    (unless (file-exists-p bootstrap-file)
+      (with-current-buffer
+          (url-retrieve-synchronously
+           "https://raw.githubusercontent.com/radian-software/straight.el/develop/install.el"
+           'silent 'inhibit-cookies)
+        (goto-char (point-max))
+        (eval-print-last-sexp)))
+    (load bootstrap-file nil 'nomessage)))
+
+(use-package nerd-icons
+  :config
+  (setq nerd-icons-font-family "Symbols Nerd Font Mono"))
+
+(use-package doom-modeline
+  :ensure t
+  :config
+  (doom-modeline-mode 1))
+
+(use-package marginalia
+  ;; Bind `marginalia-cycle' locally in the minibuffer.  To make the binding
+  ;; available in the *Completions* buffer, add it to the
+  ;; `completion-list-mode-map'.
+  :bind (:map minibuffer-local-map
+              ("M-A" . marginalia-cycle))
+
+  ;; The :init section is always executed.
+  :init
+
+  ;; Marginalia must be activated in the :init section of use-package such that
+  ;; the mode gets enabled right away. Note that this forces loading the
+  ;; package.
+  (marginalia-mode))
+
+(use-package nerd-icons-completion
+  :ensure t
+  :config
+  (nerd-icons-completion-mode 1)
+  (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
+
+(use-package treemacs
+  :ensure t
+  :config
+  (treemacs-follow-mode t)
+  (treemacs-filewatch-mode t)
+  (treemacs-fringe-indicator-mode t)
+  (treemacs-git-mode 'deferred)
+  (treemacs-resize-icons 10)
+  (treemacs-indentation 1)
+  (treemacs-show-hidden-files t)
+  (treemacs-silent-refresh t)
+  (treemacs-silent-filewatch t)
+  (treemacs-width 22)
+  (treemacs-position 'left)
+  (treemacs-follow-after-init t)
+  (treemacs-is-never-other-window t)
+  (treemacs-no-png-images t)
+  (treemacs-no-delete-other-windows t)
+  (treemacs-missing-project-action 'ask)
+  (treemacs-recenter-after-project-expand 'on-distance)
+  (treemacs-recenter-after-file-follow 'on-distance)
+  (treemacs-recenter-after-tag-follow 'on-distance)
+  (treemacs-recenter-after-project-jump 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-file-follow 'on-distance)
+  (treemacs-recenter-after-tag-follow 'on-distance)
+  (treemacs-recenter-after-project-jump 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-project-expand 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-file-follow 'on-distance)
+  (treemacs-recenter-after-tag-follow 'on-distance)
+  (treemacs-recenter-after-project-jump 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-project-expand 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-file-follow 'on-distance)
+  (treemacs-recenter-after-tag-follow 'on-distance)
+  (treemacs-recenter-after-project-jump 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-project-expand 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-file-follow 'on-distance)
+  (treemacs-recenter-after-tag-follow 'on-distance)
+  (treemacs-recenter-after-project-j)
+  (ergoemacs-define-key ergoemacs-override-keymap (kbd "<apps> r")  'treemacs)
+  )
+
+(use-package treemacs-nerd-icons
+  :config
+  (treemacs-load-theme "nerd-icons"))
+
+(use-package nerd-icons-ibuffer
+  :ensure t
+  :hook (ibuffer-mode . nerd-icons-ibuffer-mode))
+
+(use-package page-break-lines
+  :ensure t
+  :config
+  (global-page-break-lines-mode t))
+
+(use-package projectile
+  :ensure t
+  :config
+  (projectile-mode +1)
+  (define-key projectile-mode-map (kbd "C-c p") 'projectile-command-map))
+
+(use-package dashboard
+  :ensure t
+  :config
+  (dashboard-setup-startup-hook)
+  (setq dashboard-startup-banner 'logo)
+  (setq dashboard-center-content t)
+  (setq dashboard-set-heading-icons t)
+  (setq dashboard-set-file-icons t)
+  (setq dashboard-set-navigator t)
+  (setq dashboard-items '((recents  . 5)
+                          (bookmarks . 5)
+                          (projects . 5)
+                          (agenda . 5)
+                          (registers . 5)))
+  (setq dashboard-set-init-info t)
+  (setq dashboard-set-footer nil)
+  (setq dashboard-set-navigator t)
+  (setq dashboard-navigator-buttons
+        `(((,(all-the-icons-faicon "home" :height 1.1 :v-adjust 0.0)
+            "Custom home"
+            "Browse the web"
+            (lambda (&rest _) (browse-url "https://google.com")))
+           (,(all-the-icons-faicon "book" :height 1.1 :v-adjust 0.0)
+            "Info"
+            "Browse the web"
+            (lambda (&rest _) (browse-url "https://google.com")))
+           (,(all-the-icons-faicon "cog" :height 1.1 :v-adjust 0.0)
+            "Settings"
+            "Browse the web"
+            (lambda (&rest _) (browse-url "https://google.com")))))))
+
+
+(use-package dirvish
+  :init
+  (dirvish-override-dired-mode)
+  :config
+  (setq dirvish-mode-line-format
+        '(:left (sort symlink) :right (omit yank index)))
+  (setq dirvish-mode-line-height 10)
+  (setq dirvish-attributes
+        '(nerd-icons file-time file-size collapse subtree-state vc-state git-msg))
+  (setq dirvish-subtree-state-style 'nerd)
+  (setq delete-by-moving-to-trash t)
+  (setq dirvish-path-separators (list
+                                 (format "  %s " (nerd-icons-codicon "nf-cod-home"))
+                                 (format "  %s " (nerd-icons-codicon "nf-cod-root_folder"))
+                                 (format " %s " (nerd-icons-faicon "nf-fa-angle_right"))))
+  (setq dired-listing-switches
+        "-l --almost-all --human-readable --group-directories-first --no-group")
+  (dirvish-peek-mode) ; Preview files in minibuffer
+  (dirvish-side-follow-mode) ; similar to `treemacs-follow-mode'
+  )
 
 
 (require 'package)
@@ -83,8 +249,47 @@
         ergoemacs-beginning-or-end-of-line-and-what 'page
         ergoemacs-smart-paste t))
 
-(use-package 'editorconfig)
-(use-package 'jsonrpc)
+(use-package editorconfig)
+(use-package jsonrpc)
+
+(use-package markdown-mode
+  :ensure t
+  :config
+  (add-hook 'markdown-mode-hook
+            (lambda ()
+              (setq markdown-command "pandoc -f markdown -t html -s"))))
+
+(use-package consult
+  :ensure t
+  :config
+  (global-set-key (kbd "C-x b") 'consult-buffer)
+  (global-set-key (kbd "C-x 4 b") 'consult-buffer-other-window)
+  (global-set-key (kbd "C-x 5 b") 'consult-buffer-other-frame)
+  (global-set-key (kbd "M-g g") 'consult-goto-line)
+  (global-set-key (kbd "M-g M-g") 'consult-goto-line)
+  (global-set-key (kbd "M-g o") 'consult-outline)
+  (global-set-key (kbd "M-g M-o") 'consult-outline)
+  (global-set-key (kbd "M-g m") 'consult-mark)
+  (global-set-key (kbd "M-g M-m") 'consult-mark)
+  (global-set-key (kbd "M-g k") 'consult-global-mark)
+  (global-set-key (kbd "M-g M-k") 'consult-global-mark)
+  (global-set-key (kbd "M-g i") 'consult-imenu)
+  (global-set-key (kbd "M-g M-i") 'consult-imenu)
+  (global-set-key (kbd "M-g f") 'consult-flycheck)
+  (global-set-key (kbd "M-g M-f") 'consult-flycheck)
+  (global-set-key (kbd "M-g r") 'consult-ripgrep)
+  (global-set-key (kbd "M-g M-r") 'consult-ripgrep)
+  (global-set-key (kbd "M-g l") 'consult-line)
+  (global-set-key (kbd "M-g M-l") 'consult-line)
+  (global-set-key (kbd "M-g c") 'consult-complex-command)
+  (global-set-key (kbd "M-g M-c") 'consult-complex-command)
+  (global-set-key (kbd "M-g s") 'consult-isearch)
+  (global-set-key (kbd "M-g M-s") 'consult-isearch)
+  (global-set-key (kbd "M-g b") 'consult-bookmark)
+  (global-set-key (kbd "M-g M-b") 'consult-bookmark)
+  (global-set-key (kbd "M-g d") 'consult-yank-pop)
+  (global-set-key (kbd "M-g M-d") 'consult-yank-pop)
+  (global-set-key (kbd "M-g p") 'consult-project))
 
 
 (unless (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
@@ -708,6 +913,8 @@
 (global-set-key (kbd "<f10>") 'menu-bar-mode)
 (global-set-key (kbd "<f12>") 'tool-bar-mode)
 (global-set-key (kbd "<f9>") 'tabbar-mode)
+
+(menu-bar-mode 0)
 
 (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> n") 'R (kbd "r"))
 
