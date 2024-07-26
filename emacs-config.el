@@ -88,26 +88,26 @@
 
 
 (unless (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
-(use-package copilot
-  :quelpa (copilot :fetcher github
-                   :repo "copilot-emacs/copilot.el"
-                   :branch "main"
-                   :files ("*.el"))
-  :config
-  (when (file-exists-p "/usr/local/bin/node")
-    (setq copilot-node-executable "/usr/local/bin/node"))
-  (add-hook 'prog-mode-hook 'copilot-mode)
-  (define-key copilot-mode-map (kbd "M-[")
-              'copilot-next-completion)
-  (define-key copilot-mode-map (kbd "M-]")
-              'copilot-previous-completion)
-  (define-key copilot-mode-map (kbd "C-<right>")
-              'copilot-accept-completion-by-word)
-  (define-key copilot-mode-map (kbd "C-<down>")
-              'copilot-accept-completion-by-line)
-  (define-key copilot-mode-map (kbd "C-<left>") #'copilot-complete)
-  (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-  (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion))
+  (use-package copilot
+    :quelpa (copilot :fetcher github
+                     :repo "copilot-emacs/copilot.el"
+                     :branch "main"
+                     :files ("*.el"))
+    :config
+    (when (file-exists-p "/usr/local/bin/node")
+      (setq copilot-node-executable "/usr/local/bin/node"))
+    (add-hook 'prog-mode-hook 'copilot-mode)
+    (define-key copilot-mode-map (kbd "M-[")
+                'copilot-next-completion)
+    (define-key copilot-mode-map (kbd "M-]")
+                'copilot-previous-completion)
+    (define-key copilot-mode-map (kbd "C-<right>")
+                'copilot-accept-completion-by-word)
+    (define-key copilot-mode-map (kbd "C-<down>")
+                'copilot-accept-completion-by-line)
+    (define-key copilot-mode-map (kbd "C-<left>") #'copilot-complete)
+    (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
+    (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)))
 
 (when (version< "24.4" emacs-version)
   (use-package electric-operator
