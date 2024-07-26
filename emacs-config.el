@@ -74,6 +74,9 @@
   :config
   (setq nerd-icons-font-family "Symbols Nerd Font Mono"))
 
+(use-package all-the-icons
+  :if (display-graphic-p))
+
 (use-package doom-modeline
   :ensure t
   :config
@@ -565,11 +568,6 @@
   :config
   (volatile-highlights-mode))
 
-(use-package mode-icons
-  :ensure t
-  :config
-  (mode-icons-mode))
-
 (use-package tabbar
   :ensure t)
 
@@ -692,11 +690,22 @@
 
 
 (if (version< "24.4" emacs-version)
-    (use-package magit
+    (progn
+      (use-package magit
       :ensure t
       :commands (magit-status)
       ;; (add-hook 'magit-mode-hook #'turn-on-magit-gh-pulls)
       )
+      (use-package magit-file-icons
+        :ensure t
+        :after magit
+        :init
+        (magit-file-icons-mode 1)
+        :custom
+        ;; These are the default values:
+        (magit-file-icons-enable-diff-file-section-icons t)
+        (magit-file-icons-enable-untracked-icons t)
+        (magit-file-icons-enable-diffstat-icons t)))
   (when (file-exists-p "~/.emacs.d/magit")
     (add-to-list 'load-path "~/.emacs.d/magit")
     (require 'magit)))
