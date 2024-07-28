@@ -852,6 +852,10 @@
   :commands (R)
   :interpreter (("Rscript" . r-mode)
                 ("R" . r-mode))
+  :custom
+  (ess-indent-offset 2 t nil "Customized with use-package ess")
+  (ess-r-flymake-linters
+   '("closed_curly_linter = NULL" "commas_linter = NULL" "commented_code_linter = NULL" "infix_spaces_linter = NULL" "line_length_linter = NULL" "object_length_linter = NULL" "object_name_linter(styles = \"camelCase\")" "object_usage_linter = NULL" "open_curly_linter = NULL" "pipe_continuation_linter = NULL" "single_quotes_linter = NULL" "spaces_inside_linter = NULL" "spaces_left_parentheses_linter = NULL" "trailing_blank_lines_linter = NULL" "trailing_whitespace_linter = NULL"))
   :config
   (require 'ess-site)
   (require 'ess-autoloads)
