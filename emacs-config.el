@@ -70,9 +70,52 @@
         (eval-print-last-sexp)))
     (load bootstrap-file nil 'nomessage)))
 
+(when (file-exists-p "/usr/local/share/emacs/site-lisp/mu4e")
+  (add-to-list 'load-path "/usr/local/share/emacs/site-lisp/mu4e")
+  (require 'mu4e)
+  (setq mu4e-maildir "~/.mail/gmail"
+        mu4e-sent-folder "/[Gmail].Sent Mail"
+        mu4e-drafts-folder "/[Gmail].Drafts"
+        mu4e-trash-folder "/[Gmail].Trash"
+        mu4e-refile-folder "/[Gmail].All Mail"
+        mu4e-get-mail-command "mbsync -a"
+        mu4e-update-interval 300
+        mu4e-compose-signature-auto-include nil
+        mu4e-view-show-images t
+        mu4e-view-show-addresses t
+        mu4e-headers-skip-duplicates t
+        user-mail-address "matthew.fidler@gmail.com"
+        user-full-name "Matthew L. Fidler"
+        essage-send-mail-function 'smtpmail-send-it
+        smtpmail-smtp-server "smtp.gmail.com"
+        smtpmail-smtp-service 587
+        smtpmail-stream-type 'starttls
+        smtpmail-smtp-user "matthew.fidler@gmail.com"
+        message-kill-buffer-on-exit t)
+  (when (file-exists-p "~/src/mu4e-dashboard")
+    (add-to-list 'load-path "~/src/mu4e-dashboard")
+    (require 'mu4e-dashboard)
+    (setq mu4e-dashboard-start-with-main t)
+    ;; (setq mu4e-dashboard-org-agenda t)
+    ;; (setq mu4e-dashboard-org-agenda-file "~/org/agenda.org")
+    (setq mu4e-dashboard-org-agenda-span 7)
+    (setq mu4e-dashboard-org-agenda-use-time-grid t)
+    (setq mu4e-dashboard-org-agenda-use-tag-trees t)
+    (setq mu4e-dashboard-org-agenda-use-deadline t)))
+
 (use-package nerd-icons
   :config
   (setq nerd-icons-font-family "Symbols Nerd Font Mono"))
+
+(use-package kind-icon
+  :ensure t
+  :after company
+  :config
+  (let* ((kind-func (lambda (cand) (company-call-backend 'kind cand)))
+         (formatter (kind-icon-margin-formatter `((company-kind . ,kind-func)))))
+    (defun my-company-kind-icon-margin (cand _selected)
+      (funcall formatter cand))
+    (setq company-format-margin-function #'my-company-kind-icon-margin)))
 
 (use-package all-the-icons
   :if (display-graphic-p))
@@ -278,10 +321,11 @@
   (global-set-key (kbd "M-g M-k") 'consult-global-mark)
   (global-set-key (kbd "M-g i") 'consult-imenu)
   (global-set-key (kbd "M-g M-i") 'consult-imenu)
-  (global-set-key (kbd "M-g f") 'consult-flycheck)
-  (global-set-key (kbd "M-g M-f") 'consult-flycheck)
+  ;; (global-set-key (kbd "M-g f") 'consult-flycheck)
+  ;; (global-set-key (kbd "M-g M-f") 'consult-flycheck)
   (global-set-key (kbd "M-g r") 'consult-ripgrep)
   (global-set-key (kbd "M-g M-r") 'consult-ripgrep)
+  (ergoemacs-define-key ergoemacs-override-keymap (kbd "<menu> n") 'grep (kbd "g"))
   (global-set-key (kbd "M-g l") 'consult-line)
   (global-set-key (kbd "M-g M-l") 'consult-line)
   (global-set-key (kbd "M-g c") 'consult-complex-command)
@@ -705,7 +749,9 @@
         ;; These are the default values:
         (magit-file-icons-enable-diff-file-section-icons t)
         (magit-file-icons-enable-untracked-icons t)
-        (magit-file-icons-enable-diffstat-icons t)))
+        (magit-file-icons-enable-diffstat-icons t))
+      (use-package forge
+        :after magit))
   (when (file-exists-p "~/.emacs.d/magit")
     (add-to-list 'load-path "~/.emacs.d/magit")
     (require 'magit)))
@@ -743,7 +789,8 @@
 (use-package avy
   :ensure t
   :config
-  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-,") 'avy-goto-word-or-subword-1))
+  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-,") 'avy-goto-word-or-subword-1)
+  (ergoemacs-define-key ergoemacs-user-keymap (kbd "M-.") 'avy-goto-line))
 
 (if (version< "24.4" emacs-version)
     (use-package expand-region
@@ -886,9 +933,9 @@
     :mode ("\\.[Rr][mM][Dd][Hh]\\'"         . poly-markdown+r-mode)
     :ensure t)
 
-  (use-package flycheck
-    :config
-    (global-flycheck-mode 1))
+  ;; (use-package flycheck
+  ;;   :config
+  ;;   (global-flycheck-mode 1))
 
   (use-package undo-fu
     :ensure t
