@@ -71,51 +71,6 @@
     (load bootstrap-file nil 'nomessage)))
 
 
-(when (file-exists-p "/usr/local/share/emacs/site-lisp/mu4e")
-  (add-to-list 'load-path "/usr/local/share/emacs/site-lisp/mu4e")
-  (require 'mu4e)
-  (setq mu4e-maildir "~/.mail/gmail"
-        message-send-mail-function 'smtpmail-send-it
-        message-citation-line-format "On %a, %b %d %Y, %f wrote:\n"
-        message-kill-buffer-on-exit t
-        mu4e-use-fancy-chars t
-        mu4e-view-prefer-html t
-        mu4e-view-show-images t
-        mu4e-view-show-addresses t
-        mu4e-view-image-max-width 800
-        mu4e-attachment-dir "~/Downloads"
-        mu4e-change-filenames-when-moving t
-        mu4e-compose-signature-auto-include nil
-        mu4e-drafts-folder "/[Gmail].Drafts"
-        mu4e-get-mail-command "mbsync -a"
-        mu4e-headers-skip-duplicates t
-        mu4e-index-cleanup t
-        mu4e-index-lazy-check nil
-        message-sendmail-envelope-from 'header
-        smtpmail-smtp-service 587
-        mu4e-refile-folder "/[Gmail].All Mail"
-        mu4e-sent-folder "/[Gmail].Sent Mail"
-        mu4e-trash-folder "/[Gmail].Trash"
-        mu4e-update-interval (* 6 60 60)
-        mu4e-update-interval 300
-        mu4e-view-show-addresses t
-        mu4e-view-show-images t
-        smtpmail-smtp-server "smtp.gmail.com"
-        smtpmail-smtp-service 587
-        smtpmail-stream-type 'starttls
-        user-full-name "Matthew L. Fidler"
-        user-mail-address "matthew.fidler@gmail.com"
-        smtpmail-smtp-user "matthew.fidler@gmail.com")
-  (when (file-exists-p "~/src/mu4e-dashboard")
-    (add-to-list 'load-path "~/src/mu4e-dashboard")
-    (require 'mu4e-dashboard)
-    (setq mu4e-dashboard-start-with-main t)
-    ;; (setq mu4e-dashboard-org-agenda t)
-    ;; (setq mu4e-dashboard-org-agenda-file "~/org/agenda.org")
-    (setq mu4e-dashboard-org-agenda-span 7)
-    (setq mu4e-dashboard-org-agenda-use-time-grid t)
-    (setq mu4e-dashboard-org-agenda-use-tag-trees t)
-    (setq mu4e-dashboard-org-agenda-use-deadline t)))
 
 
 (use-package nerd-icons
@@ -160,53 +115,6 @@
   :config
   (nerd-icons-completion-mode 1)
   (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
-
-(use-package treemacs
-  :ensure t
-  :config
-  (treemacs-follow-mode t)
-  (treemacs-filewatch-mode t)
-  (treemacs-fringe-indicator-mode t)
-  (treemacs-git-mode 'deferred)
-  (treemacs-resize-icons 10)
-  (treemacs-indentation 1)
-  (treemacs-show-hidden-files t)
-  (treemacs-silent-refresh t)
-  (treemacs-silent-filewatch t)
-  (treemacs-width 22)
-  (treemacs-position 'left)
-  (treemacs-follow-after-init t)
-  (treemacs-is-never-other-window t)
-  (treemacs-no-png-images t)
-  (treemacs-no-delete-other-windows t)
-  (treemacs-missing-project-action 'ask)
-  (treemacs-recenter-after-project-expand 'on-distance)
-  (treemacs-recenter-after-file-follow 'on-distance)
-  (treemacs-recenter-after-tag-follow 'on-distance)
-  (treemacs-recenter-after-project-jump 'on-distance)
-  (treemacs-recenter-after-project-collapse 'on-distance)
-  (treemacs-recenter-after-file-follow 'on-distance)
-  (treemacs-recenter-after-tag-follow 'on-distance)
-  (treemacs-recenter-after-project-jump 'on-distance)
-  (treemacs-recenter-after-project-collapse 'on-distance)
-  (treemacs-recenter-after-project-expand 'on-distance)
-  (treemacs-recenter-after-project-collapse 'on-distance)
-  (treemacs-recenter-after-file-follow 'on-distance)
-  (treemacs-recenter-after-tag-follow 'on-distance)
-  (treemacs-recenter-after-project-jump 'on-distance)
-  (treemacs-recenter-after-project-collapse 'on-distance)
-  (treemacs-recenter-after-project-expand 'on-distance)
-  (treemacs-recenter-after-project-collapse 'on-distance)
-  (treemacs-recenter-after-file-follow 'on-distance)
-  (treemacs-recenter-after-tag-follow 'on-distance)
-  (treemacs-recenter-after-project-jump 'on-distance)
-  (treemacs-recenter-after-project-collapse 'on-distance)
-  (treemacs-recenter-after-project-expand 'on-distance)
-  (treemacs-recenter-after-project-collapse 'on-distance)
-  (treemacs-recenter-after-file-follow 'on-distance)
-  (treemacs-recenter-after-tag-follow 'on-distance)
-  (treemacs-recenter-after-project-j)
-  (ergoemacs-define-key ergoemacs-override-keymap (kbd "<apps>")  'treemacs (kbd "q")))
 
 (use-package treemacs-nerd-icons
   :config
@@ -301,6 +209,91 @@
   (add-to-list 'load-path "~/.emacs.d/ergoemacs-mode"))
 
 (require 'ergoemacs-mode)
+
+(use-package treemacs
+  :ensure t
+  :config
+  (treemacs-follow-mode t)
+  (treemacs-filewatch-mode t)
+  (treemacs-fringe-indicator-mode t)
+  (treemacs-git-mode 'deferred)
+  (treemacs-resize-icons 10)
+  (treemacs-indentation 1)
+  (treemacs-show-hidden-files t)
+  (treemacs-silent-refresh t)
+  (treemacs-silent-filewatch t)
+  (treemacs-width 22)
+  (treemacs-position 'left)
+  (treemacs-follow-after-init t)
+  (treemacs-is-never-other-window t)
+  (treemacs-no-png-images t)
+  (treemacs-no-delete-other-windows t)
+  (treemacs-missing-project-action 'ask)
+  (treemacs-recenter-after-project-expand 'on-distance)
+  (treemacs-recenter-after-file-follow 'on-distance)
+  (treemacs-recenter-after-tag-follow 'on-distance)
+  (treemacs-recenter-after-project-jump 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-file-follow 'on-distance)
+  (treemacs-recenter-after-tag-follow 'on-distance)
+  (treemacs-recenter-after-project-jump 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-project-expand 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-file-follow 'on-distance)
+  (treemacs-recenter-after-tag-follow 'on-distance)
+  (treemacs-recenter-after-project-jump 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-project-expand 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-file-follow 'on-distance)
+  (treemacs-recenter-after-tag-follow 'on-distance)
+  (treemacs-recenter-after-project-jump 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-project-expand 'on-distance)
+  (treemacs-recenter-after-project-collapse 'on-distance)
+  (treemacs-recenter-after-file-follow 'on-distance)
+  (treemacs-recenter-after-tag-follow 'on-distance)
+  (treemacs-recenter-after-project-j)
+  (ergoemacs-define-key ergoemacs-override-keymap (kbd "<apps>")  'treemacs (kbd "q")))
+
+(when (file-exists-p "/usr/local/share/emacs/site-lisp/mu4e")
+  (add-to-list 'load-path "/usr/local/share/emacs/site-lisp/mu4e")
+  (require 'mu4e)
+  (setq mu4e-maildir "~/.mail/gmail"
+        message-send-mail-function 'smtpmail-send-it
+        message-citation-line-format "On %a, %b %d %Y, %f wrote:\n"
+        message-kill-buffer-on-exit t
+        mu4e-use-fancy-chars t
+        mu4e-view-prefer-html t
+        mu4e-view-show-images t
+        mu4e-view-show-addresses t
+        mu4e-view-image-max-width 800
+        mu4e-attachment-dir "~/Downloads"
+        mu4e-change-filenames-when-moving t
+        mu4e-compose-signature-auto-include nil
+        mu4e-drafts-folder "/[Gmail].Drafts"
+        mu4e-get-mail-command "mbsync -a"
+        mu4e-headers-skip-duplicates t
+        mu4e-index-cleanup t
+        mu4e-index-lazy-check nil
+        message-sendmail-envelope-from 'header
+        smtpmail-smtp-service 587
+        mu4e-refile-folder "/[Gmail].All Mail"
+        mu4e-sent-folder "/[Gmail].Sent Mail"
+        mu4e-trash-folder "/[Gmail].Trash"
+        mu4e-update-interval (* 6 60 60)
+        mu4e-update-interval 300
+        mu4e-view-show-addresses t
+        mu4e-view-show-images t
+        smtpmail-smtp-server "smtp.gmail.com"
+        smtpmail-smtp-service 587
+        smtpmail-stream-type 'starttls
+        user-full-name "Matthew L. Fidler"
+        user-mail-address "matthew.fidler@gmail.com"
+        smtpmail-smtp-user "matthew.fidler@gmail.com")
+  (ergoemacs-define-key ergoemacs-override-keymap (kbd "<apps>")  'mu4e (kbd "p")))
+
 
 (use-package ergoemacs-mode
   :init
