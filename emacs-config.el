@@ -70,28 +70,42 @@
         (eval-print-last-sexp)))
     (load bootstrap-file nil 'nomessage)))
 
+
 (when (file-exists-p "/usr/local/share/emacs/site-lisp/mu4e")
   (add-to-list 'load-path "/usr/local/share/emacs/site-lisp/mu4e")
   (require 'mu4e)
   (setq mu4e-maildir "~/.mail/gmail"
-        mu4e-sent-folder "/[Gmail].Sent Mail"
-        mu4e-drafts-folder "/[Gmail].Drafts"
-        mu4e-trash-folder "/[Gmail].Trash"
-        mu4e-refile-folder "/[Gmail].All Mail"
-        mu4e-get-mail-command "mbsync -a"
-        mu4e-update-interval 300
-        mu4e-compose-signature-auto-include nil
+        message-send-mail-function 'smtpmail-send-it
+        message-citation-line-format "On %a, %b %d %Y, %f wrote:\n"
+        message-kill-buffer-on-exit t
+        mu4e-use-fancy-chars t
+        mu4e-view-prefer-html t
         mu4e-view-show-images t
         mu4e-view-show-addresses t
+        mu4e-view-image-max-width 800
+        mu4e-attachment-dir "~/Downloads"
+        mu4e-change-filenames-when-moving t
+        mu4e-compose-signature-auto-include nil
+        mu4e-drafts-folder "/[Gmail].Drafts"
+        mu4e-get-mail-command "mbsync -a"
         mu4e-headers-skip-duplicates t
-        user-mail-address "matthew.fidler@gmail.com"
-        user-full-name "Matthew L. Fidler"
-        essage-send-mail-function 'smtpmail-send-it
+        mu4e-index-cleanup t
+        mu4e-index-lazy-check nil
+        message-sendmail-envelope-from 'header
+        smtpmail-smtp-service 587
+        mu4e-refile-folder "/[Gmail].All Mail"
+        mu4e-sent-folder "/[Gmail].Sent Mail"
+        mu4e-trash-folder "/[Gmail].Trash"
+        mu4e-update-interval (* 6 60 60)
+        mu4e-update-interval 300
+        mu4e-view-show-addresses t
+        mu4e-view-show-images t
         smtpmail-smtp-server "smtp.gmail.com"
         smtpmail-smtp-service 587
         smtpmail-stream-type 'starttls
-        smtpmail-smtp-user "matthew.fidler@gmail.com"
-        message-kill-buffer-on-exit t)
+        user-full-name "Matthew L. Fidler"
+        user-mail-address "matthew.fidler@gmail.com"
+        smtpmail-smtp-user "matthew.fidler@gmail.com")
   (when (file-exists-p "~/src/mu4e-dashboard")
     (add-to-list 'load-path "~/src/mu4e-dashboard")
     (require 'mu4e-dashboard)
@@ -102,6 +116,7 @@
     (setq mu4e-dashboard-org-agenda-use-time-grid t)
     (setq mu4e-dashboard-org-agenda-use-tag-trees t)
     (setq mu4e-dashboard-org-agenda-use-deadline t)))
+
 
 (use-package nerd-icons
   :config
@@ -191,8 +206,7 @@
   (treemacs-recenter-after-file-follow 'on-distance)
   (treemacs-recenter-after-tag-follow 'on-distance)
   (treemacs-recenter-after-project-j)
-  (ergoemacs-define-key ergoemacs-override-keymap (kbd "<apps> r")  'treemacs)
-  )
+  (ergoemacs-define-key ergoemacs-override-keymap (kbd "<apps>")  'treemacs (kbd "q")))
 
 (use-package treemacs-nerd-icons
   :config
@@ -308,35 +322,43 @@
 (use-package consult
   :ensure t
   :config
+  (defun my/consult-flymake-or-flycheck()
+    (interactive)
+    (if (bound-and-true-p flymake-mode)
+        (consult-flymake)
+      (consult-flycheck)))
+
+  (when flycheck)
   (global-set-key (kbd "C-x b") 'consult-buffer)
   (global-set-key (kbd "C-x 4 b") 'consult-buffer-other-window)
   (global-set-key (kbd "C-x 5 b") 'consult-buffer-other-frame)
-  (global-set-key (kbd "M-g g") 'consult-goto-line)
-  (global-set-key (kbd "M-g M-g") 'consult-goto-line)
-  (global-set-key (kbd "M-g o") 'consult-outline)
-  (global-set-key (kbd "M-g M-o") 'consult-outline)
-  (global-set-key (kbd "M-g m") 'consult-mark)
-  (global-set-key (kbd "M-g M-m") 'consult-mark)
-  (global-set-key (kbd "M-g k") 'consult-global-mark)
-  (global-set-key (kbd "M-g M-k") 'consult-global-mark)
-  (global-set-key (kbd "M-g i") 'consult-imenu)
-  (global-set-key (kbd "M-g M-i") 'consult-imenu)
-  ;; (global-set-key (kbd "M-g f") 'consult-flycheck)
-  ;; (global-set-key (kbd "M-g M-f") 'consult-flycheck)
-  (global-set-key (kbd "M-g r") 'consult-ripgrep)
-  (global-set-key (kbd "M-g M-r") 'consult-ripgrep)
+
+  (global-set-key (kbd "<menu> f g") 'consult-goto-line)
+  (global-set-key (kbd "<menu> f <menu> f") 'consult-goto-line)
+  (global-set-key (kbd "<menu> f o") 'consult-outline)
+  (global-set-key (kbd "<menu> f M-o") 'consult-outline)
+  (global-set-key (kbd "<menu> f m") 'consult-mark)
+  (global-set-key (kbd "<menu> f M-m") 'consult-mark)
+  (global-set-key (kbd "<menu> f k") 'consult-global-mark)
+  (global-set-key (kbd "<menu> f M-k") 'consult-global-mark)
+  (global-set-key (kbd "<menu> f i") 'consult-imenu)
+  (global-set-key (kbd "<menu> f M-i") 'consult-imenu)
+  (global-set-key (kbd "<menu> f f") 'my/consult-flymake-or-flycheck)
+  (global-set-key (kbd "<menu> f f") 'my/consult-flymake-or-flycheck)
+  (global-set-key (kbd "<menu> f r") 'consult-ripgrep)
+  (global-set-key (kbd "<menu> f M-r") 'consult-ripgrep)
   (ergoemacs-define-key ergoemacs-override-keymap (kbd "<menu> n") 'grep (kbd "g"))
-  (global-set-key (kbd "M-g l") 'consult-line)
-  (global-set-key (kbd "M-g M-l") 'consult-line)
-  (global-set-key (kbd "M-g c") 'consult-complex-command)
-  (global-set-key (kbd "M-g M-c") 'consult-complex-command)
-  (global-set-key (kbd "M-g s") 'consult-isearch)
-  (global-set-key (kbd "M-g M-s") 'consult-isearch)
-  (global-set-key (kbd "M-g b") 'consult-bookmark)
-  (global-set-key (kbd "M-g M-b") 'consult-bookmark)
-  (global-set-key (kbd "M-g d") 'consult-yank-pop)
-  (global-set-key (kbd "M-g M-d") 'consult-yank-pop)
-  (global-set-key (kbd "M-g p") 'consult-project))
+  (global-set-key (kbd "<menu> f l") 'consult-line)
+  (global-set-key (kbd "<menu> f M-l") 'consult-line)
+  (global-set-key (kbd "<menu> f c") 'consult-complex-command)
+  (global-set-key (kbd "<menu> f M-c") 'consult-complex-command)
+  (global-set-key (kbd "<menu> f s") 'consult-isearch)
+  (global-set-key (kbd "<menu> f M-s") 'consult-isearch)
+  (global-set-key (kbd "<menu> f b") 'consult-bookmark)
+  (global-set-key (kbd "<menu> f M-b") 'consult-bookmark)
+  (global-set-key (kbd "<menu> f d") 'consult-yank-pop)
+  (global-set-key (kbd "<menu> f M-d") 'consult-yank-pop)
+  (global-set-key (kbd "<menu> f p") 'consult-project))
 
 
 (unless (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
@@ -890,7 +912,8 @@
                         (lambda ()
                           (ess-nuke-trailing-whitespace)))
               (ess-roxy-mode 1)
-              (electric-operator-mode)
+              ;;; This interferes with lintr infix operators
+              ;;(electric-operator-mode)
               (run-hooks 'prog-mode-hook)
               (set (make-variable-buffer-local 'ess-indent-level) 2)
               (setq ess-offset-arguments-newline '(prev-line 2))))
