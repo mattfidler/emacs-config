@@ -70,9 +70,6 @@
         (eval-print-last-sexp)))
     (load bootstrap-file nil 'nomessage)))
 
-
-
-
 (use-package nerd-icons
   :config
   (setq nerd-icons-font-family "Symbols Nerd Font Mono"))
@@ -257,6 +254,31 @@
   (treemacs-recenter-after-project-j)
   (ergoemacs-define-key ergoemacs-override-keymap (kbd "<apps>")  'treemacs (kbd "q")))
 
+(use-package powershell)
+
+(use-package transient
+  :config
+  (transient-define-prefix transient-apps ()
+    "Apps"
+    ["Applications"
+     ("c" "Calc" calc)
+     ("d" "dired" dired-jump)
+     ("p" "Powershell" powershell)
+     ("b" "Buffer" consult-buffer)
+     ("g" "grep" grep)
+     ("G" "consult ripgrep" consult-ripgrep)
+     ("m" "magit" magit-status)
+     ("o" "open externally" ergoemacs-open-in-external-app)
+     ("s" "shell" shell)
+     ("t" "treemacs" treemacs)
+     ("r" "R" R)
+     ])
+  ;;(define-key ergoemacs-override-keymap (kbd "<menu> k") nil)
+  ;;(define-key ergoemacs-override-keymap (kbd "<apps> k") nil)
+  ;;(ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> n") 'R (kbd "r"))
+  (define-key ergoemacs-user-keymap (kbd "<apps> k") 'transient-apps)
+  (define-key ergoemacs-user-keymap (kbd "<menu> k") 'transient-apps))
+
 (when (file-exists-p "/usr/local/share/emacs/site-lisp/mu4e")
   (add-to-list 'load-path "/usr/local/share/emacs/site-lisp/mu4e")
   (require 'mu4e)
@@ -314,6 +336,7 @@
 
 (use-package consult
   :ensure t
+  :after transient
   :config
   (defun my/consult-flymake-or-flycheck()
     (interactive)
@@ -321,37 +344,47 @@
         (consult-flymake)
       (consult-flycheck)))
 
-  (when flycheck)
-  (global-set-key (kbd "C-x b") 'consult-buffer)
-  (global-set-key (kbd "C-x 4 b") 'consult-buffer-other-window)
-  (global-set-key (kbd "C-x 5 b") 'consult-buffer-other-frame)
+  (transient-define-prefix consult-prefix ()
+    "Consult prefix"
+    ["Actions"
+     ("b" "Buffer" consult-buffer)
+     ("f" "File" consult-file)
+     ("g" "Grep" consult-ripgrep)
+     ("l" "Line" consult-line)
+     ("m" "Mark" consult-mark)
+     ("o" "Outline" consult-outline)
+     ("r" "Register" consult-register)
+     ("c" "Complex Command" consult-complex-command)
+     ("i" "Imenu" consult-imenu)
+     ("k" "Global Mark" consult-global-mark)
+     ("d" "Yank Pop" consult-yank-pop)
+     ("p" "Project" consult-project)])
 
-  (global-set-key (kbd "<menu> f g") 'consult-goto-line)
-  (global-set-key (kbd "<menu> f <menu> f") 'consult-goto-line)
-  (global-set-key (kbd "<menu> f o") 'consult-outline)
-  (global-set-key (kbd "<menu> f M-o") 'consult-outline)
-  (global-set-key (kbd "<menu> f m") 'consult-mark)
-  (global-set-key (kbd "<menu> f M-m") 'consult-mark)
-  (global-set-key (kbd "<menu> f k") 'consult-global-mark)
-  (global-set-key (kbd "<menu> f M-k") 'consult-global-mark)
-  (global-set-key (kbd "<menu> f i") 'consult-imenu)
-  (global-set-key (kbd "<menu> f M-i") 'consult-imenu)
-  (global-set-key (kbd "<menu> f f") 'my/consult-flymake-or-flycheck)
-  (global-set-key (kbd "<menu> f f") 'my/consult-flymake-or-flycheck)
-  (global-set-key (kbd "<menu> f r") 'consult-ripgrep)
-  (global-set-key (kbd "<menu> f M-r") 'consult-ripgrep)
-  (ergoemacs-define-key ergoemacs-override-keymap (kbd "<menu> n") 'grep (kbd "g"))
-  (global-set-key (kbd "<menu> f l") 'consult-line)
-  (global-set-key (kbd "<menu> f M-l") 'consult-line)
-  (global-set-key (kbd "<menu> f c") 'consult-complex-command)
-  (global-set-key (kbd "<menu> f M-c") 'consult-complex-command)
-  (global-set-key (kbd "<menu> f s") 'consult-isearch)
-  (global-set-key (kbd "<menu> f M-s") 'consult-isearch)
-  (global-set-key (kbd "<menu> f b") 'consult-bookmark)
-  (global-set-key (kbd "<menu> f M-b") 'consult-bookmark)
-  (global-set-key (kbd "<menu> f d") 'consult-yank-pop)
-  (global-set-key (kbd "<menu> f M-d") 'consult-yank-pop)
-  (global-set-key (kbd "<menu> f p") 'consult-project))
+  ;; (global-set-key (kbd "C-x b") 'consult-buffer)
+  ;; (global-set-key (kbd "C-x 4 b") 'consult-buffer-other-window)
+  ;; (global-set-key (kbd "C-x 5 b") 'consult-buffer-other-frame)
+
+  ;; (global-set-key (kbd "<menu> f k") 'consult-global-mark)
+  ;; (global-set-key (kbd "<menu> f M-k") 'consult-global-mark)
+  ;; (global-set-key (kbd "<menu> f i") 'consult-imenu)
+  ;; (global-set-key (kbd "<menu> f M-i") 'consult-imenu)
+  ;; (global-set-key (kbd "<menu> f f") 'my/consult-flymake-or-flycheck)
+  ;; (global-set-key (kbd "<menu> f f") 'my/consult-flymake-or-flycheck)
+  ;; (global-set-key (kbd "<menu> f r") 'consult-ripgrep)
+  ;; (global-set-key (kbd "<menu> f M-r") 'consult-ripgrep)
+  ;; (ergoemacs-define-key ergoemacs-override-keymap (kbd "<menu> n") 'grep (kbd "g"))
+  ;; (global-set-key (kbd "<menu> f l") 'consult-line)
+  ;; (global-set-key (kbd "<menu> f M-l") 'consult-line)
+  ;; (global-set-key (kbd "<menu> f c") 'consult-complex-command)
+  ;; (global-set-key (kbd "<menu> f M-c") 'consult-complex-command)
+  ;; (global-set-key (kbd "<menu> f s") 'consult-isearch)
+  ;; (global-set-key (kbd "<menu> f M-s") 'consult-isearch)
+  ;; (global-set-key (kbd "<menu> f b") 'consult-bookmark)
+  ;; (global-set-key (kbd "<menu> f M-b") 'consult-bookmark)
+  ;; (global-set-key (kbd "<menu> f d") 'consult-yank-pop)
+  ;; (global-set-key (kbd "<menu> f M-d") 'consult-yank-pop)
+  ;; (global-set-key (kbd "<menu> f p") 'consult-project)
+  )
 
 (use-package request)
 
@@ -523,9 +556,6 @@
       save-place t)
 (transient-mark-mode t)
 (defalias 'yes-or-no-p 'y-or-n-p)
-
-(when (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
-  (use-package powershell))
 
 (if (version< "24.4" emacs-version)
     (progn
@@ -973,7 +1003,7 @@
 
 (menu-bar-mode 0)
 
-(ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> n") 'R (kbd "r"))
+;;(ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> n") 'R (kbd "r"))
 
 (when (file-exists-p "C:/R/Rstudio/bin/gnugrep")
   (add-to-list 'exec-path "C:\\R\\Rstudio\\bin\\gnugrep"))
@@ -1009,20 +1039,18 @@
     :straight (:host github :repo "chep/copilot-chat.el" :files ("*.el"))
     :after request
     :config
-    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
-                          'copilot-chat-display (kbd "c"))
-    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
-                          'copilot-chat-explain (kbd "e"))
-    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
-                          'copilot-chat-review (kbd "r"))
-    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
-                          'copilot-chat-doc (kbd "d"))
-    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
-                          'copilot-chat-fix (kbd "f"))
-    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
-                          'copilot-chat-optimize (kbd "o"))
-    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
-                          'copilot-chat-test (kbd "t")))
+    (transient-define-prefix copilot-chat ()
+      "Copilot Chat"
+      ["Copilot Chat Actions"
+       ("c" "Display/Open" copilot-chat-display)
+       ("e" "Explain" copilot-chat-explain)
+       ("r" "Review" copilot-chat-review)
+       ("d" "Doc" copilot-chat-doc)
+       ("f" "Fix" copilot-chat-fix)
+       ("o" "Optimize" copilot-chat-optimize)
+       ("t" "Test" copilot-chat-test)])
+    (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat)
+    (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat))
 
     (use-package copilot
       :quelpa (copilot :fetcher github
