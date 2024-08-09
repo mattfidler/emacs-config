@@ -1,4 +1,4 @@
-;;; emacs-config.el --- Sample emacs configuration
+i;;; emacs-config.el --- Sample emacs configuration
 ;;
 ;; Filename: emacs-config.el
 ;; Description: Suggested ergoemacs-mode configuration
@@ -272,6 +272,9 @@
      ("s" "shell" shell)
      ("t" "treemacs" treemacs)
      ("r" "R" R)
+     ("e" "mc/edit-lline" mc/edit-lines)
+     ("a" "avy goto word" avy-goto-word-or-subword-1)
+     ("l" "avy goto line" avy-goto-line)
      ])
   ;;(define-key ergoemacs-override-keymap (kbd "<menu> k") nil)
   ;;(define-key ergoemacs-override-keymap (kbd "<apps> k") nil)
