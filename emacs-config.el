@@ -353,28 +353,9 @@
   (global-set-key (kbd "<menu> f M-d") 'consult-yank-pop)
   (global-set-key (kbd "<menu> f p") 'consult-project))
 
+(use-package request)
 
-(unless (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
-  (use-package copilot
-    :quelpa (copilot :fetcher github
-                     :repo "copilot-emacs/copilot.el"
-                     :branch "main"
-                     :files ("*.el"))
-    :config
-    (when (file-exists-p "/usr/local/bin/node")
-      (setq copilot-node-executable "/usr/local/bin/node"))
-    (add-hook 'prog-mode-hook 'copilot-mode)
-    (define-key copilot-mode-map (kbd "M-[")
-                'copilot-next-completion)
-    (define-key copilot-mode-map (kbd "M-]")
-                'copilot-previous-completion)
-    (define-key copilot-mode-map (kbd "C-<right>")
-                'copilot-accept-completion-by-word)
-    (define-key copilot-mode-map (kbd "C-<down>")
-                'copilot-accept-completion-by-line)
-    (define-key copilot-mode-map (kbd "C-<left>") #'copilot-complete)
-    (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-    (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)))
+
 
 (when (version< "24.4" emacs-version)
   (use-package electric-operator
@@ -1022,6 +1003,48 @@
             (ansi-color-for-comint-mode-on)))
 
 (ergoemacs-mode 1)
+
+(unless (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
+  (use-package copilot-chat
+    :straight (:host github :repo "chep/copilot-chat.el" :files ("*.el"))
+    :after request
+    :config
+    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
+                          'copilot-chat-display (kbd "c"))
+    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
+                          'copilot-chat-explain (kbd "e"))
+    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
+                          'copilot-chat-review (kbd "r"))
+    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
+                          'copilot-chat-doc (kbd "d"))
+    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
+                          'copilot-chat-fix (kbd "f"))
+    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
+                          'copilot-chat-optimize (kbd "o"))
+    (ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> j")
+                          'copilot-chat-test (kbd "t")))
+
+    (use-package copilot
+      :quelpa (copilot :fetcher github
+                       :repo "copilot-emacs/copilot.el"
+                       :branch "main"
+                       :files ("*.el"))
+      :config
+      (when (file-exists-p "/usr/local/bin/node")
+        (setq copilot-node-executable "/usr/local/bin/node"))
+      (add-hook 'prog-mode-hook 'copilot-mode)
+      (define-key copilot-mode-map (kbd "M-[")
+                  'copilot-next-completion)
+      (define-key copilot-mode-map (kbd "M-]")
+                  'copilot-previous-completion)
+      (define-key copilot-mode-map (kbd "C-<right>")
+                  'copilot-accept-completion-by-word)
+      (define-key copilot-mode-map (kbd "C-<down>")
+                  'copilot-accept-completion-by-line)
+      (define-key copilot-mode-map (kbd "C-<left>") #'copilot-complete)
+      (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
+      (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)))
+
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; emacs-config.el ends here
