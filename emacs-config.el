@@ -1,4 +1,4 @@
-i;;; emacs-config.el --- Sample emacs configuration
+;;; emacs-config.el --- Sample emacs configuration
 ;;
 ;; Filename: emacs-config.el
 ;; Description: Suggested ergoemacs-mode configuration
