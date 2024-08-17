@@ -35,3 +35,9 @@ apt-get install --assume-yes \
 
 ./autogen.sh
 ./configure --without-compress-install --with-native-compilation --with-json --with-mailutils
+make
+make install
+
+# without sudo call
+# systemctl enable --user emacs
+# systemctl start --user emacs
