@@ -41,6 +41,10 @@
 ;;
 ;;; Code:
 
+(when (file-exists-p "~/src/org-mode")
+  (add-to-list 'load-path "~/src/org-mode")
+  (require 'org))
+
 (unless (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
   (unless (package-installed-p 'quelpa)
     (with-temp-buffer
@@ -1037,11 +1041,37 @@
 
 (ergoemacs-mode 1)
 
+(use-package quarto-mode
+  :mode (("\\.qmd" . poly-quarto-mode)))
+
+
+
 (unless (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
+  (use-package shell-maker)
+  (use-package dall-e-shell
+    :arfter (shell-maker)
+    :config
+    (require 'dall-e-shell))
   (use-package copilot-chat
     :straight (:host github :repo "chep/copilot-chat.el" :files ("*.el"))
-    :after request
+    :after (request shell-maker)
+    :custom
+    (copilot-chat-frontend 'shell-makes)
     :config
+    (require 'copilot-chat-shell-maker)
+    (push '(shell-maker . copilot-chat-shell-maker-init) copilot-chat-frontend-list)
+    (copilot-chat-shell-maker-init)
+    (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat)
+    (define-key ergoemacs-user-keymap (kbd "<apps> n") 'copilot-chat)
+    ;; (require 'copilot-chat-org)
+    (defun copilot-chat-roxygen2()
+      "ask copilot to describe the code using roxygen2."
+      (interactive)
+      (let ((code (buffer-substring-no-properties (region-beginning) (region-end))))
+        (with-current-buffer (copilot-chat-get-shell-buffer)
+          (insert (concat "Would you please describe the following code using roxygen2 and use @author Matthew L. Fidler:\n" code))
+          (shell-maker-submit))))
+
     (transient-define-prefix copilot-chat ()
       "Copilot Chat"
       ["Copilot Chat Actions"
@@ -1051,9 +1081,10 @@
        ("d" "Doc" copilot-chat-doc)
        ("f" "Fix" copilot-chat-fix)
        ("o" "Optimize" copilot-chat-optimize)
+       ("x" "roxygen describe" copilot-chat-roxygen2)
        ("t" "Test" copilot-chat-test)])
-    (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat)
-    (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat))
+
+    )
 
     (use-package copilot
       :quelpa (copilot :fetcher github
