@@ -74,6 +74,10 @@
     (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin")
     (setenv "PATH" (concat "\"C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin\\\";" (getenv "PATH"))))
 
+  (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/quarto/bin/tools")
+    (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin\\tools")
+    (setenv "PATH" (concat "\"C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin\\tools\\\";" (getenv "PATH"))))
+
   (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/node")
     (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\node")
     (setq copilot-node-executable "C:\\Program Files\\RStudio\\resources\\app\\bin\\node\\node.exe"))
@@ -91,11 +95,6 @@
       (add-to-list 'exec-path (concat rstudio-bin-2 "gnudiff")))
     (when (file-exists-p (concat rstudio-bin-1 "quarto/bin"))
       (add-to-list 'exec-path (concat rstudio-bin-2 "quarto\\bin")))))
-
-
-
-
-
 
 (when (file-exists-p "~/src/org-mode")
   (add-to-list 'load-path "~/src/org-mode")
@@ -137,6 +136,50 @@
 (use-package nerd-icons
   :config
   (setq nerd-icons-font-family "Symbols Nerd Font Mono"))
+
+;; Windows emacs unicode does not work so well for me, try to fix it
+;; here
+(when (eq system-type 'windows-nt)
+  (use-package persistent-soft
+    :quelpa (persistent-soft
+             :fetcher github
+             :repo "rolandwalker/persistent-soft"
+             :branch "master"
+             :files ("*.el")))
+
+  (use-package font-utils
+    :quelpa (font-utils
+             :fetcher github
+             :repo "rolandwalker/font-utils"
+             :branch "master"
+             :files ("*.el"))
+    :after persistent-soft)
+
+  (use-package ucs-utils
+    :quelpa (ucl-utils
+             :fetcher github
+             :repo "rolandwalker/ucs-utils"
+             :branch "master"
+             :files ("*.el"))
+    :after font-utils)
+
+  (use-package list-utils
+    :quelpa (list-utils
+             :fetcher github
+             :repo "rolandwalker/list-utils"
+             :branch "master"
+             :files ("*.el"))
+    :after ucs-utils)
+
+  (use-package unicode-fonts
+    :quelpa (unicode-fonts
+             :fetcher github
+             :repo "rolandwalker/unicode-fonts"
+             :branch "master"
+             :files ("*.el"))
+    :after list-utils
+    :config
+    (unicode-fonts-setup)))
 
 (use-package kind-icon
   :ensure t

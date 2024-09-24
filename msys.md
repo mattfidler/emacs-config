@@ -40,11 +40,6 @@ Other packages that may be helpful are
 pacman -S mingw-w64-x86_64-ripgrep
 ```
 
-Also need `curl` installed
-
-```sh
-pacman -S mingw-w64-x86_64-curl
-```
 
 For using R, add the R path to the `exec-path`:
 
