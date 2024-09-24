@@ -853,16 +853,29 @@
       (use-package solarized-theme
         :ensure t
         :config
-        (if (daemonp)
-            (add-hook 'after-make-frame-functions
-                      (defun my/theme-init-daemon (frame)
-                        (with-selected-frame frame
-                          (load-theme 'solarized-light t))
-                        ;; Run this hook only once.
-                        (remove-hook 'after-make-frame-functions
-                                     #'my/theme-init-daemon)
-                        (fmakunbound 'my/theme-init-daemon)))
-          (load-theme 'solarized-light t)))
+        ;; Dark is for remote sessions, light is for local sessions.
+        (if (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT"))
+            (if (daemonp)
+                (add-hook 'after-make-frame-functions
+                          (defun my/theme-init-daemon (frame)
+                            (with-selected-frame frame
+                              (load-theme 'solarized-dark t))
+                            ;; Run this hook only once.
+                            (remove-hook 'after-make-frame-functions
+                                         #'my/theme-init-daemon)
+                            (fmakunbound 'my/theme-init-daemon)))
+              (load-theme 'solarized-dark t))
+          (if (daemonp)
+              (add-hook 'after-make-frame-functions
+                        (defun my/theme-init-daemon (frame)
+                          (with-selected-frame frame
+                            (load-theme 'solarized-light t))
+                          ;; Run this hook only once.
+                          (remove-hook 'after-make-frame-functions
+                                       #'my/theme-init-daemon)
+                          (fmakunbound 'my/theme-init-daemon)))
+            (load-theme 'solarized-light t)))
+        )
     (when (file-exists-p "~/.emacs.d/emacs-color-theme-solarized")
       (add-to-list 'load-path "~/.emacs.d/emacs-color-theme-solarized")
       (add-to-list 'custom-theme-load-path "~/.emacs.d/emacs-color-theme-solarized")
@@ -1098,7 +1111,7 @@
            :files ("*.el"))
   :after (request shell-maker)
   :custom
-  (copilot-chat-frontend 'shell-makes)
+  (copilot-chat-frontend 'shell-maker)
   :config
   (require 'copilot-chat-shell-maker)
   (when (file-exists-p "c:/rtools44/mingw64/bin/curl.exe")
