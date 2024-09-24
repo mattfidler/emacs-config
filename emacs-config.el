@@ -70,8 +70,9 @@
     (add-to-list 'exec-path "c:\\Progra~1\\R\\R-4.4.0\\bin\\x64"))
 
 
-  (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/quarto")
-    (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto"))
+  (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/quarto/bin")
+    (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin")
+    (setenv "PATH" (concat "\"C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin\\\";" (getenv "PATH"))))
 
   (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/node")
     (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\node")
@@ -1114,10 +1115,8 @@
   (copilot-chat-frontend 'shell-maker)
   :config
   (require 'copilot-chat-shell-maker)
-  (when (file-exists-p "c:/rtools44/mingw64/bin/curl.exe")
-    (setq copilot-chat-curl-program "c:/rtools44/mingw64/bin/curl.exe")
-    (setq copilot-chat-curl-proxy-insecure t)
-    (setq copilot-chat-curl-proxy "http://na-usi1-proxy-user.na.novartis.net:2011"))
+  (when (file-exists-p "c:/Windows/System32/curl.exe")
+    (setq copilot-chat-curl-program "c:/Windows/System32/curl.exe"))
   (push '(shell-maker . copilot-chat-shell-maker-init) copilot-chat-frontend-list)
   (copilot-chat-shell-maker-init)
   (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat)
