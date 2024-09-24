@@ -43,8 +43,10 @@
 
 (when (eq system-type 'windows-nt)
   (setenv "NODE_TLS_REJECT_UNAUTHORIZED" "0")
+
   (when (file-exists-p "C:/Progra~1/Git/usr/bin")
     (add-to-list 'exec-path "C:\\Progra~1\\Git\\usr\\bin"))
+
   (let* ((git-path (concat "C:/Users/"
                          (downcase (user-login-name))
                          "/AppData/Local/Programs/Git/bin"))
@@ -53,22 +55,8 @@
       (add-to-list 'exec-path git-win-path)
       (setenv "PATH" (concat git-win-path ";" (getenv "PATH")))))
 
-  (when (file-exists-p "C:/R/Rstudio/bin/gnugrep")
-    (add-to-list 'exec-path "C:\\R\\Rstudio\\bin\\gnugrep"))
-  (when (file-exists-p "c:/R/hunspell/bin")
-    (add-to-list 'exec-path "c:\\R\\hunspell\\bin")
-    (setq ispell-program-name "c:\\R\\hunspell\\bin\\hunspell.exe"))
-
-  ;; (when (file-exists-p "c:/Rtools43/usr/bin")
-  ;;   (add-to-list 'exec-path "c:\\Rtools43\\usr\\bin"))
-
-
-  (when (file-exists-p "c:/R/R-4.3.0/bin/x64")
-    (add-to-list 'exec-path "c:\\R\\R-4.3.0\\bin\\x64"))
-
   (when (file-exists-p "c:/Progra~1/R/R-4.4.0/bin/x64")
     (add-to-list 'exec-path "c:\\Progra~1\\R\\R-4.4.0\\bin\\x64"))
-
 
   (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/quarto/bin")
     (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin")
@@ -80,21 +68,13 @@
 
   (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/node")
     (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\node")
-    (setq copilot-node-executable "C:\\Program Files\\RStudio\\resources\\app\\bin\\node\\node.exe"))
+    (setq copilot-node-executable
+          "C:\\Program Files\\RStudio\\resources\\app\\bin\\node\\node.exe"))
 
   (when (file-exists-p "C:/Program Files/nodejs")
     (add-to-list 'exec-path "C:\\Program Files\\nodejs")
     (setq copilot-node-executable "C:\\Program Files\\nodejs\\node.exe")
     (setenv "PATH" (concat "\"C:\\Program Files\\nodejs\\\";" (getenv "PATH"))))
-
-  (let ((rstudio-bin-1 "C:/R/Rstudio/bin/")
-        (rstudio-bin-2 "C:\\R\\Rstudio\\bin\\"))
-    (when (file-exists-p (concat rstudio-bin-1 "gnugrep"))
-      (add-to-list 'exec-path (concat rstudio-bin-2 "gnugrep")))
-    (when (file-exists-p (concat rstudio-bin-1 "gnudiff"))
-      (add-to-list 'exec-path (concat rstudio-bin-2 "gnudiff")))
-    (when (file-exists-p (concat rstudio-bin-1 "quarto/bin"))
-      (add-to-list 'exec-path (concat rstudio-bin-2 "quarto\\bin")))))
 
 (when (file-exists-p "~/src/org-mode")
   (add-to-list 'load-path "~/src/org-mode")
