@@ -53,12 +53,6 @@
       (add-to-list 'exec-path git-win-path)
       (setenv "PATH" (concat git-win-path ";" (getenv "PATH")))))
 
-  (when (file-exists-p "C:/R/Rstudio/bin/gnugrep")
-    (add-to-list 'exec-path "C:\\R\\Rstudio\\bin\\gnugrep"))
-  (when (file-exists-p "c:/R/hunspell/bin")
-    (add-to-list 'exec-path "c:\\R\\hunspell\\bin")
-    (setq ispell-program-name "c:\\R\\hunspell\\bin\\hunspell.exe"))
-
   ;; (when (file-exists-p "c:/Rtools43/usr/bin")
   ;;   (add-to-list 'exec-path "c:\\Rtools43\\usr\\bin"))
 
@@ -68,8 +62,9 @@
 
   (when (file-exists-p "c:/Progra~1/R/R-4.4.0/bin/x64")
     (add-to-list 'exec-path "c:\\Progra~1\\R\\R-4.4.0\\bin\\x64"))
-
-
+  (when (file-exists-p "C:/R/extra/bin")
+    (add-to-list 'exec-path "C:\\R\\extra\\bin")
+    (setenv "PATH" (concat "C:\\R\\extra\\bin;" (getenv "PATH"))))
   (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/quarto/bin")
     (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin")
     (setenv "PATH" (concat "\"C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin\\\";" (getenv "PATH"))))
