@@ -55,11 +55,8 @@
 
   ;; (when (file-exists-p "c:/Rtools43/usr/bin")
   ;;   (add-to-list 'exec-path "c:\\Rtools43\\usr\\bin"))
-
-
   (when (file-exists-p "c:/R/R-4.3.0/bin/x64")
     (add-to-list 'exec-path "c:\\R\\R-4.3.0\\bin\\x64"))
-
   (when (file-exists-p "c:/Progra~1/R/R-4.4.0/bin/x64")
     (add-to-list 'exec-path "c:\\Progra~1\\R\\R-4.4.0\\bin\\x64"))
   (when (file-exists-p "C:/R/extra/bin")
@@ -68,20 +65,16 @@
   (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/quarto/bin")
     (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin")
     (setenv "PATH" (concat "\"C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin\\\";" (getenv "PATH"))))
-
   (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/quarto/bin/tools")
     (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin\\tools")
     (setenv "PATH" (concat "\"C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin\\tools\\\";" (getenv "PATH"))))
-
   (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/node")
     (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\node")
     (setq copilot-node-executable "C:\\Program Files\\RStudio\\resources\\app\\bin\\node\\node.exe"))
-
   (when (file-exists-p "C:/Program Files/nodejs")
     (add-to-list 'exec-path "C:\\Program Files\\nodejs")
     (setq copilot-node-executable "C:\\Program Files\\nodejs\\node.exe")
     (setenv "PATH" (concat "\"C:\\Program Files\\nodejs\\\";" (getenv "PATH"))))
-
   (let ((rstudio-bin-1 "C:/R/Rstudio/bin/")
         (rstudio-bin-2 "C:\\R\\Rstudio\\bin\\"))
     (when (file-exists-p (concat rstudio-bin-1 "gnugrep"))
@@ -1153,20 +1146,35 @@
   (copilot-chat-frontend 'shell-maker)
   :config
   (require 'copilot-chat-shell-maker)
-  (when (file-exists-p "c:/Windows/System32/curl.exe")
-    (setq copilot-chat-curl-program "c:/Windows/System32/curl.exe"))
+  ;; (setq copilot-chat-shell-maker-use-polymode t)
+  (if (file-exists-p "c:/Windows/System32/curl.exe")
+      (setq copilot-chat-curl-program "c:/Windows/System32/curl.exe")
+    (setq copilot-chat-backend 'request))
   (push '(shell-maker . copilot-chat-shell-maker-init) copilot-chat-frontend-list)
   (copilot-chat-shell-maker-init)
   (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat)
   (define-key ergoemacs-user-keymap (kbd "<apps> n") 'copilot-chat)
-  ;; (require 'copilot-chat-org)
+  ;; (require 'copilot-chat)
+  (require 'copilot-chat-org)
+
+  ;; Hacks to ask my own questions
   (defun copilot-chat-roxygen2()
-    "ask copilot to describe the code using roxygen2."
+    "Ask Copilot to fix the current selected code."
     (interactive)
-    (let ((code (buffer-substring-no-properties (region-beginning) (region-end))))
-      (with-current-buffer (copilot-chat-get-shell-buffer)
-        (insert (concat "Would you please describe the following code using roxygen2 and use @author Matthew L. Fidler:\n" code))
-        (shell-maker-submit))))
+    (copilot-chat--ask-region 'roxygen2))
+
+  (setq copilot-chat-prompt-roxygen2
+        "Would you please describe the following code using roxygen2 and use @author Matthew L. Fidler; if the function starts with a '.' do not export and use @noRd but still document each parameter and the title/description of the functions, otherwise use @export\n")
+
+  (defun copilot-chat--prompts ()
+    "Return assoc list of promts for each command."
+    `((explain . ,copilot-chat-prompt-explain)
+      (review . ,copilot-chat-prompt-review)
+      (doc . ,copilot-chat-prompt-doc)
+      (fix . ,copilot-chat-prompt-fix)
+      (optimize . ,copilot-chat-prompt-optimize)
+      (test . ,copilot-chat-prompt-test)
+      (roxygen2 . ,copilot-chat-prompt-roxygen2)))
 
   (transient-define-prefix copilot-chat ()
     "Copilot Chat"
