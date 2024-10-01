@@ -41,7 +41,18 @@
 ;;
 ;;; Code:
 
+(setq nvs nil)
+
+(let ((site-lisp-dir "/CHBS/apps/EB/software/Emacs/29.4-GCCcore-11.2.0-extensions/site-lisp/elpa/"))
+  (when (file-exists-p site-lisp-dir)
+    (add-to-list 'load-path site-lisp-dir)
+    (require 'ess-site)
+    (setq nvs t)))
+
 (when (eq system-type 'windows-nt)
+  (require 'tramp)
+  (setq tramp-default-method "plinkx")
+
   (setenv "NODE_TLS_REJECT_UNAUTHORIZED" "0")
   (when (file-exists-p "C:/Progra~1/Git/usr/bin")
     (add-to-list 'exec-path "C:\\Progra~1\\Git\\usr\\bin"))
@@ -52,10 +63,6 @@
     (when (file-exists-p git-path)
       (add-to-list 'exec-path git-win-path)
       (setenv "PATH" (concat git-win-path ";" (getenv "PATH")))))
-
-  ;; (when (file-exists-p "c:/Rtools43/usr/bin")
-  ;;   (add-to-list 'exec-path "c:\\Rtools43\\usr\\bin"))
-
 
   (when (file-exists-p "c:/R/R-4.3.0/bin/x64")
     (add-to-list 'exec-path "c:\\R\\R-4.3.0\\bin\\x64"))
@@ -889,11 +896,25 @@
 
 (when (display-graphic-p)
   (if (version< "24.4" emacs-version)
+      (use-package zenburn-theme
+        :ensure t)
       (use-package solarized-theme
         :ensure t
+        :after zenburn-theme
         :config
         ;; Dark is for remote sessions, light is for local sessions.
-        (if (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT"))
+        (if nvs
+            (if (daemonp)
+                (add-hook 'after-make-frame-functions
+                          (defun my/theme-init-daemon (frame)
+                            (with-selected-frame frame
+                              (load-theme 'zenburn t))
+                            ;; Run this hook only once.
+                            (remove-hook 'after-make-frame-functions
+                                         #'my/theme-init-daemon)
+                            (fmakunbound 'my/theme-init-daemon)))
+              (load-theme 'zenburn t))
+            (if (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT"))
             (if (daemonp)
                 (add-hook 'after-make-frame-functions
                           (defun my/theme-init-daemon (frame)
@@ -913,8 +934,7 @@
                           (remove-hook 'after-make-frame-functions
                                        #'my/theme-init-daemon)
                           (fmakunbound 'my/theme-init-daemon)))
-            (load-theme 'solarized-light t)))
-        )
+            (load-theme 'solarized-light t)))))
     (when (file-exists-p "~/.emacs.d/emacs-color-theme-solarized")
       (add-to-list 'load-path "~/.emacs.d/emacs-color-theme-solarized")
       (add-to-list 'custom-theme-load-path "~/.emacs.d/emacs-color-theme-solarized")
@@ -1142,64 +1162,66 @@
   (require 'dall-e-shell))
 
 ;; does not work work proxy yet
-(use-package copilot-chat
-  :quelpa (copilot-chat
-           :fetcher github
-           :repo "chep/copilot-chat.el"
-           :branch "master"
-           :files ("*.el"))
-  :after (request shell-maker)
-  :custom
-  (copilot-chat-frontend 'shell-maker)
-  :config
-  (require 'copilot-chat-shell-maker)
-  (when (file-exists-p "c:/Windows/System32/curl.exe")
-    (setq copilot-chat-curl-program "c:/Windows/System32/curl.exe"))
-  (push '(shell-maker . copilot-chat-shell-maker-init) copilot-chat-frontend-list)
-  (copilot-chat-shell-maker-init)
-  (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat)
-  (define-key ergoemacs-user-keymap (kbd "<apps> n") 'copilot-chat)
-  ;; (require 'copilot-chat-org)
-  (defun copilot-chat-roxygen2()
-    "ask copilot to describe the code using roxygen2."
-    (interactive)
-    (let ((code (buffer-substring-no-properties (region-beginning) (region-end))))
-      (with-current-buffer (copilot-chat-get-shell-buffer)
-        (insert (concat "Would you please describe the following code using roxygen2 and use @author Matthew L. Fidler:\n" code))
-        (shell-maker-submit))))
+(unless nvs
+  (use-package copilot-chat
+    :quelpa (copilot-chat
+             :fetcher github
+             :repo "chep/copilot-chat.el"
+             :branch "master"
+             :files ("*.el"))
+    :after (request shell-maker)
+    :custom
+    (copilot-chat-frontend 'shell-maker)
+    :config
+    (require 'copilot-chat-shell-maker)
+    (when (file-exists-p "c:/Windows/System32/curl.exe")
+      (setq copilot-chat-curl-program "c:/Windows/System32/curl.exe"))
+    (push '(shell-maker . copilot-chat-shell-maker-init) copilot-chat-frontend-list)
+    (copilot-chat-shell-maker-init)
+    (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat)
+    (define-key ergoemacs-user-keymap (kbd "<apps> n") 'copilot-chat)
+    ;; (require 'copilot-chat-org)
+    (defun copilot-chat-roxygen2()
+      "ask copilot to describe the code using roxygen2."
+      (interactive)
+      (let ((code (buffer-substring-no-properties (region-beginning) (region-end))))
+        (with-current-buffer (copilot-chat-get-shell-buffer)
+          (insert (concat "Would you please describe the following code using roxygen2 and use @author Matthew L. Fidler:\n" code))
+          (shell-maker-submit))))
 
-  (transient-define-prefix copilot-chat ()
-    "Copilot Chat"
-    ["Copilot Chat Actions"
-     ("c" "Display/Open" copilot-chat-display)
-     ("e" "Explain" copilot-chat-explain)
-     ("r" "Review" copilot-chat-review)
-     ("d" "Doc" copilot-chat-doc)
-     ("f" "Fix" copilot-chat-fix)
-     ("o" "Optimize" copilot-chat-optimize)
-     ("x" "roxygen describe" copilot-chat-roxygen2)
-     ("t" "Test" copilot-chat-test)]))
+    (transient-define-prefix copilot-chat ()
+      "Copilot Chat"
+      ["Copilot Chat Actions"
+       ("c" "Display/Open" copilot-chat-display)
+       ("e" "Explain" copilot-chat-explain)
+       ("r" "Review" copilot-chat-review)
+       ("d" "Doc" copilot-chat-doc)
+       ("f" "Fix" copilot-chat-fix)
+       ("o" "Optimize" copilot-chat-optimize)
+       ("x" "roxygen describe" copilot-chat-roxygen2)
+       ("t" "Test" copilot-chat-test)]))
 
-(use-package copilot
-  :quelpa (copilot :fetcher github
-                   :repo "copilot-emacs/copilot.el"
-                   :branch "main"
-                   :files ("*.el"))
-  :config
-  (when (file-exists-p "/usr/local/bin/node")
-    (setq copilot-node-executable "/usr/local/bin/node"))
-  (add-hook 'prog-mode-hook 'copilot-mode)
-  (define-key copilot-mode-map (kbd "M-[")
-              'copilot-next-completion)
-  (define-key copilot-mode-map (kbd "M-]")
-              'copilot-previous-completion)
-  (define-key copilot-mode-map (kbd "C-<right>")
-              'copilot-accept-completion-by-word)
-  (define-key copilot-mode-map (kbd "C-<down>")
-              'copilot-accept-completion-by-line)
-  (define-key copilot-mode-map (kbd "C-<left>") #'copilot-complete)
-  (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-  (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion))
+  (use-package copilot
+    :quelpa (copilot :fetcher github
+                     :repo "copilot-emacs/copilot.el"
+                     :branch "main"
+                     :files ("*.el"))
+    :config
+    (when (file-exists-p "/usr/local/bin/node")
+      (setq copilot-node-executable "/usr/local/bin/node"))
+    (add-hook 'prog-mode-hook 'copilot-mode)
+    (define-key copilot-mode-map (kbd "M-[")
+                'copilot-next-completion)
+    (define-key copilot-mode-map (kbd "M-]")
+                'copilot-previous-completion)
+    (define-key copilot-mode-map (kbd "C-<right>")
+                'copilot-accept-completion-by-word)
+    (define-key copilot-mode-map (kbd "C-<down>")
+                'copilot-accept-completion-by-line)
+    (define-key copilot-mode-map (kbd "C-<left>") #'copilot-complete)
+    (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
+    (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion))
+  )
 
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
