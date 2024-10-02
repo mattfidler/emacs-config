@@ -240,16 +240,15 @@
   :ensure t
   :config
   (projectile-mode +1)
-  (define-key projectile-mode-map (kbd "s-p") 'projectile-command-map)
-  (define-key projectile-mode-map (kbd "C-c p") 'projectile-command-map)
 
   (defun projectile-is-rstudio-p (dir)
-    (let ((found nil))
-      (dolist (f (directory-files dir))
-        (when (string-match "\\.Rproj$" f)
-          (setq found t)))
-      found))
-
+    (condition-case nil
+        (let ((found nil))
+          (dolist (f (directory-files dir))
+            (when (string-match "\\.Rproj$" f)
+              (setq found t)))
+          found)
+      (error nil)))
 
   (projectile-register-project-type 'rstudio-project #'projectile-is-rstudio-p
                                     ;; :compile "R CMD INSTALL ."
@@ -257,7 +256,16 @@
                                     ;; :run "Rscript -e 'devtools::load_all()'"
                                     ;; :test-suffix "_test"
                                     )
-  )
+  :init
+  (if (and (file-directory-p "~/src")
+           (file-directory-p "~/projects"))
+      (setq projectile-project-search-path '("~/src"
+                                             "~/projects")))
+  (if (file-directory-p "~/src")
+      (setq projectile-project-search-path '("~/src"))
+    (if (file-directory-p "~/projects")
+        (setq projectile-project-search-path '("~/projects"))))
+  (setq projectile-switch-project-action #'projectile-dired))
 
 (use-package dashboard
   :ensure t
@@ -333,6 +341,8 @@
   (add-to-list 'load-path "~/.emacs.d/ergoemacs-mode"))
 
 (require 'ergoemacs-mode)
+
+(define-key ergoemacs-user-keymap (kbd "C-p") 'projectile-command-map)
 
 (use-package treemacs
   :ensure t
