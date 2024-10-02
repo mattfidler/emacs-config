@@ -41,7 +41,18 @@
 ;;
 ;;; Code:
 
+(setq nvs nil)
+
+(let ((site-lisp-dir "/CHBS/apps/EB/software/Emacs/29.4-GCCcore-11.2.0-extensions/site-lisp/elpa/"))
+  (when (file-exists-p site-lisp-dir)
+    (add-to-list 'load-path site-lisp-dir)
+    (require 'ess-site)
+    (setq nvs t)))
+
 (when (eq system-type 'windows-nt)
+  (require 'tramp)
+  (setq tramp-default-method "plinkx")
+
   (setenv "NODE_TLS_REJECT_UNAUTHORIZED" "0")
   (when (file-exists-p "C:/Progra~1/Git/usr/bin")
     (add-to-list 'exec-path "C:\\Progra~1\\Git\\usr\\bin"))
@@ -53,13 +64,8 @@
       (add-to-list 'exec-path git-win-path)
       (setenv "PATH" (concat git-win-path ";" (getenv "PATH")))))
 
-  ;; (when (file-exists-p "c:/Rtools43/usr/bin")
-  ;;   (add-to-list 'exec-path "c:\\Rtools43\\usr\\bin"))
-
-
   (when (file-exists-p "c:/R/R-4.3.0/bin/x64")
     (add-to-list 'exec-path "c:\\R\\R-4.3.0\\bin\\x64"))
-
   (when (file-exists-p "c:/Progra~1/R/R-4.4.0/bin/x64")
     (add-to-list 'exec-path "c:\\Progra~1\\R\\R-4.4.0\\bin\\x64"))
   (when (file-exists-p "C:/R/extra/bin")
@@ -68,20 +74,16 @@
   (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/quarto/bin")
     (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin")
     (setenv "PATH" (concat "\"C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin\\\";" (getenv "PATH"))))
-
   (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/quarto/bin/tools")
     (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin\\tools")
     (setenv "PATH" (concat "\"C:\\Program Files\\RStudio\\resources\\app\\bin\\quarto\\bin\\tools\\\";" (getenv "PATH"))))
-
   (when (file-exists-p "C:/Program Files/RStudio/resources/app/bin/node")
     (add-to-list 'exec-path "C:\\Program Files\\RStudio\\resources\\app\\bin\\node")
     (setq copilot-node-executable "C:\\Program Files\\RStudio\\resources\\app\\bin\\node\\node.exe"))
-
   (when (file-exists-p "C:/Program Files/nodejs")
     (add-to-list 'exec-path "C:\\Program Files\\nodejs")
     (setq copilot-node-executable "C:\\Program Files\\nodejs\\node.exe")
     (setenv "PATH" (concat "\"C:\\Program Files\\nodejs\\\";" (getenv "PATH"))))
-
   (let ((rstudio-bin-1 "C:/R/Rstudio/bin/")
         (rstudio-bin-2 "C:\\R\\Rstudio\\bin\\"))
     (when (file-exists-p (concat rstudio-bin-1 "gnugrep"))
@@ -228,11 +230,42 @@
   :config
   (global-page-break-lines-mode t))
 
+(use-package which-key
+  :ensure t
+  :config
+  (setq which-key-idle-delay 0.5)
+  (which-key-mode))
+
 (use-package projectile
   :ensure t
   :config
   (projectile-mode +1)
-  (define-key projectile-mode-map (kbd "C-c p") 'projectile-command-map))
+
+  (defun projectile-is-rstudio-p (dir)
+    (condition-case nil
+        (let ((found nil))
+          (dolist (f (directory-files dir))
+            (when (string-match "\\.Rproj$" f)
+              (setq found t)))
+          found)
+      (error nil)))
+
+  (projectile-register-project-type 'rstudio-project #'projectile-is-rstudio-p
+                                    ;; :compile "R CMD INSTALL ."
+                                    ;; :test "R CMD check ."
+                                    ;; :run "Rscript -e 'devtools::load_all()'"
+                                    ;; :test-suffix "_test"
+                                    )
+  :init
+  (if (and (file-directory-p "~/src")
+           (file-directory-p "~/projects"))
+      (setq projectile-project-search-path '("~/src"
+                                             "~/projects")))
+  (if (file-directory-p "~/src")
+      (setq projectile-project-search-path '("~/src"))
+    (if (file-directory-p "~/projects")
+        (setq projectile-project-search-path '("~/projects"))))
+  (setq projectile-switch-project-action #'projectile-dired))
 
 (use-package dashboard
   :ensure t
@@ -308,6 +341,8 @@
   (add-to-list 'load-path "~/.emacs.d/ergoemacs-mode"))
 
 (require 'ergoemacs-mode)
+
+(define-key ergoemacs-user-keymap (kbd "C-p") 'projectile-command-map)
 
 (use-package treemacs
   :ensure t
@@ -889,11 +924,25 @@
 
 (when (display-graphic-p)
   (if (version< "24.4" emacs-version)
+      (use-package zenburn-theme
+        :ensure t)
       (use-package solarized-theme
         :ensure t
+        :after zenburn-theme
         :config
         ;; Dark is for remote sessions, light is for local sessions.
-        (if (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT"))
+        (if nvs
+            (if (daemonp)
+                (add-hook 'after-make-frame-functions
+                          (defun my/theme-init-daemon (frame)
+                            (with-selected-frame frame
+                              (load-theme 'zenburn t))
+                            ;; Run this hook only once.
+                            (remove-hook 'after-make-frame-functions
+                                         #'my/theme-init-daemon)
+                            (fmakunbound 'my/theme-init-daemon)))
+              (load-theme 'zenburn t))
+            (if (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT"))
             (if (daemonp)
                 (add-hook 'after-make-frame-functions
                           (defun my/theme-init-daemon (frame)
@@ -913,8 +962,7 @@
                           (remove-hook 'after-make-frame-functions
                                        #'my/theme-init-daemon)
                           (fmakunbound 'my/theme-init-daemon)))
-            (load-theme 'solarized-light t)))
-        )
+            (load-theme 'solarized-light t)))))
     (when (file-exists-p "~/.emacs.d/emacs-color-theme-solarized")
       (add-to-list 'load-path "~/.emacs.d/emacs-color-theme-solarized")
       (add-to-list 'custom-theme-load-path "~/.emacs.d/emacs-color-theme-solarized")
@@ -1003,6 +1051,44 @@
   :config
   (require 'ess-site)
   (require 'ess-autoloads)
+
+  ;; https://github.com/chainsawriot/ess-rproj/blob/v0.0/ess-rproj.el
+  ;; can't seem to load using melpa, so copy and modify here:
+  (require 'ess)
+
+  (defun read-proj (rproj)
+    (with-temp-buffer
+      (insert-file-contents rproj)
+      (split-string (buffer-string) "\n" t)))
+
+
+  (defun seek-rproj (directory)
+    (car (directory-files (expand-file-name directory) t "\\.[Rr]proj$")))
+
+
+  (defun get-rproj ()
+    "if default directory is an R package, return full path to the root directory; otherwise, return full path of default directory"
+    (setq-local root (plist-get (ess-r-package-info default-directory) :root))
+    (cond ((null root) (seek-rproj (expand-file-name default-directory)))
+          ((stringp root) (seek-rproj (expand-file-name root)))))
+
+  (defun set-ess-indent-rproj ()
+    (interactive)
+    (setq rproj (get-rproj))
+    (if (null rproj)
+        (message "R Project file not found.")
+      (progn
+        (setq-local ess-indent-level
+                    (string-to-number (nth 1 (seq-find (lambda (x) (string= (car x) "NumSpacesForTab"))
+                                                       (mapcar #'(lambda (x) (split-string x ": ")) (read-proj rproj))))))
+        (message "R Project file found. Set indentation to: %s." ess-indent-level))))
+
+;;;###autoload
+  (define-minor-mode ess-rproj
+    "TBA"
+    :lighter " rproj")
+
+  (add-hook 'ess-mode-hook #'set-ess-indent-rproj)
 
   ;; Lets you do 'C-c C-c Sweave' from your Rnw file
   (defun ergoemacs-add-Sweave ()
@@ -1141,65 +1227,80 @@
   :config
   (require 'dall-e-shell))
 
-;; does not work work proxy yet
-(use-package copilot-chat
-  :quelpa (copilot-chat
-           :fetcher github
-           :repo "chep/copilot-chat.el"
-           :branch "master"
-           :files ("*.el"))
-  :after (request shell-maker)
-  :custom
-  (copilot-chat-frontend 'shell-maker)
-  :config
-  (require 'copilot-chat-shell-maker)
-  (when (file-exists-p "c:/Windows/System32/curl.exe")
-    (setq copilot-chat-curl-program "c:/Windows/System32/curl.exe"))
-  (push '(shell-maker . copilot-chat-shell-maker-init) copilot-chat-frontend-list)
-  (copilot-chat-shell-maker-init)
-  (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat)
-  (define-key ergoemacs-user-keymap (kbd "<apps> n") 'copilot-chat)
-  ;; (require 'copilot-chat-org)
-  (defun copilot-chat-roxygen2()
-    "ask copilot to describe the code using roxygen2."
-    (interactive)
-    (let ((code (buffer-substring-no-properties (region-beginning) (region-end))))
-      (with-current-buffer (copilot-chat-get-shell-buffer)
-        (insert (concat "Would you please describe the following code using roxygen2 and use @author Matthew L. Fidler:\n" code))
-        (shell-maker-submit))))
+(unless nvs
+  (use-package copilot-chat
+    :quelpa (copilot-chat
+             :fetcher github
+             :repo "chep/copilot-chat.el"
+             :branch "master"
+             :files ("*.el"))
+    :after (request shell-maker)
+    :custom
+    (copilot-chat-frontend 'shell-maker)
+    :config
+    (require 'copilot-chat-shell-maker)
+    ;; (setq copilot-chat-shell-maker-use-polymode t)
+    (if (file-exists-p "c:/Windows/System32/curl.exe")
+        (setq copilot-chat-curl-program "c:/Windows/System32/curl.exe")
+      (setq copilot-chat-backend 'request))
+    (push '(shell-maker . copilot-chat-shell-maker-init) copilot-chat-frontend-list)
+    (copilot-chat-shell-maker-init)
+    (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat)
+    (define-key ergoemacs-user-keymap (kbd "<apps> n") 'copilot-chat)
+    ;; (require 'copilot-chat)
+    ;; (require 'copilot-chat-org)
 
-  (transient-define-prefix copilot-chat ()
-    "Copilot Chat"
-    ["Copilot Chat Actions"
-     ("c" "Display/Open" copilot-chat-display)
-     ("e" "Explain" copilot-chat-explain)
-     ("r" "Review" copilot-chat-review)
-     ("d" "Doc" copilot-chat-doc)
-     ("f" "Fix" copilot-chat-fix)
-     ("o" "Optimize" copilot-chat-optimize)
-     ("x" "roxygen describe" copilot-chat-roxygen2)
-     ("t" "Test" copilot-chat-test)]))
+    ;; Hacks to ask my own questions
+    (defun copilot-chat-roxygen2()
+      "Ask Copilot to fix the current selected code."
+      (interactive)
+      (copilot-chat--ask-region 'roxygen2))
 
-(use-package copilot
-  :quelpa (copilot :fetcher github
-                   :repo "copilot-emacs/copilot.el"
-                   :branch "main"
-                   :files ("*.el"))
-  :config
-  (when (file-exists-p "/usr/local/bin/node")
-    (setq copilot-node-executable "/usr/local/bin/node"))
-  (add-hook 'prog-mode-hook 'copilot-mode)
-  (define-key copilot-mode-map (kbd "M-[")
-              'copilot-next-completion)
-  (define-key copilot-mode-map (kbd "M-]")
-              'copilot-previous-completion)
-  (define-key copilot-mode-map (kbd "C-<right>")
-              'copilot-accept-completion-by-word)
-  (define-key copilot-mode-map (kbd "C-<down>")
-              'copilot-accept-completion-by-line)
-  (define-key copilot-mode-map (kbd "C-<left>") #'copilot-complete)
-  (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
-  (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion))
+    (setq copilot-chat-prompt-roxygen2
+          "Would you please describe the following code using roxygen2 and use @author Matthew L. Fidler; if the function starts with a '.' do not export and use @noRd but still document each parameter and the title/description of the functions, otherwise use @export\n")
+
+    (defun copilot-chat--prompts ()
+      "Return assoc list of promts for each command."
+      `((explain . ,copilot-chat-prompt-explain)
+        (review . ,copilot-chat-prompt-review)
+        (doc . ,copilot-chat-prompt-doc)
+        (fix . ,copilot-chat-prompt-fix)
+        (optimize . ,copilot-chat-prompt-optimize)
+        (test . ,copilot-chat-prompt-test)
+        (roxygen2 . ,copilot-chat-prompt-roxygen2)))
+
+    (transient-define-prefix copilot-chat ()
+      "Copilot Chat"
+      ["Copilot Chat Actions"
+       ("c" "Display/Open" copilot-chat-display)
+       ("e" "Explain" copilot-chat-explain)
+       ("r" "Review" copilot-chat-review)
+       ("d" "Doc" copilot-chat-doc)
+       ("f" "Fix" copilot-chat-fix)
+       ("o" "Optimize" copilot-chat-optimize)
+       ("x" "roxygen describe" copilot-chat-roxygen2)
+       ("t" "Test" copilot-chat-test)]))
+
+  (use-package copilot
+    :quelpa (copilot :fetcher github
+                     :repo "copilot-emacs/copilot.el"
+                     :branch "main"
+                     :files ("*.el"))
+    :config
+    (when (file-exists-p "/usr/local/bin/node")
+      (setq copilot-node-executable "/usr/local/bin/node"))
+    (add-hook 'prog-mode-hook 'copilot-mode)
+    (define-key copilot-mode-map (kbd "M-[")
+                'copilot-next-completion)
+    (define-key copilot-mode-map (kbd "M-]")
+                'copilot-previous-completion)
+    (define-key copilot-mode-map (kbd "C-<right>")
+                'copilot-accept-completion-by-word)
+    (define-key copilot-mode-map (kbd "C-<down>")
+                'copilot-accept-completion-by-line)
+    (define-key copilot-mode-map (kbd "C-<left>") #'copilot-complete)
+    (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
+    (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)))
 
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
