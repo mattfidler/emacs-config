@@ -354,7 +354,6 @@
   (treemacs-fringe-indicator-mode t)
   (treemacs-git-mode 'deferred)
   (treemacs-resize-icons 10)
-  (treemacs-show-hidden-files t)
   (treemacs-silent-refresh t)
   (treemacs-silent-filewatch t)
   (treemacs-width 22)
