@@ -230,11 +230,34 @@
   :config
   (global-page-break-lines-mode t))
 
+(use-package which-key
+  :ensure t
+  :config
+  (setq which-key-idle-delay 0.5)
+  (which-key-mode))
+
 (use-package projectile
   :ensure t
   :config
   (projectile-mode +1)
-  (define-key projectile-mode-map (kbd "C-c p") 'projectile-command-map))
+  (define-key projectile-mode-map (kbd "s-p") 'projectile-command-map)
+  (define-key projectile-mode-map (kbd "C-c p") 'projectile-command-map)
+
+  (defun projectile-is-rstudio-p (dir)
+    (let ((found nil))
+      (dolist (f (directory-files dir))
+        (when (string-match "\\.Rproj$" f)
+          (setq found t)))
+      found))
+
+
+  (projectile-register-project-type 'rstudio-project #'projectile-is-rstudio-p
+                                    ;; :compile "R CMD INSTALL ."
+                                    ;; :test "R CMD check ."
+                                    ;; :run "Rscript -e 'devtools::load_all()'"
+                                    ;; :test-suffix "_test"
+                                    )
+  )
 
 (use-package dashboard
   :ensure t
@@ -1018,6 +1041,44 @@
   :config
   (require 'ess-site)
   (require 'ess-autoloads)
+
+  ;; https://github.com/chainsawriot/ess-rproj/blob/v0.0/ess-rproj.el
+  ;; can't seem to load using melpa, so copy and modify here:
+  (require 'ess)
+
+  (defun read-proj (rproj)
+    (with-temp-buffer
+      (insert-file-contents rproj)
+      (split-string (buffer-string) "\n" t)))
+
+
+  (defun seek-rproj (directory)
+    (car (directory-files (expand-file-name directory) t "\\.[Rr]proj$")))
+
+
+  (defun get-rproj ()
+    "if default directory is an R package, return full path to the root directory; otherwise, return full path of default directory"
+    (setq-local root (plist-get (ess-r-package-info default-directory) :root))
+    (cond ((null root) (seek-rproj (expand-file-name default-directory)))
+          ((stringp root) (seek-rproj (expand-file-name root)))))
+
+  (defun set-ess-indent-rproj ()
+    (interactive)
+    (setq rproj (get-rproj))
+    (if (null rproj)
+        (message "R Project file not found.")
+      (progn
+        (setq-local ess-indent-level
+                    (string-to-number (nth 1 (seq-find (lambda (x) (string= (car x) "NumSpacesForTab"))
+                                                       (mapcar #'(lambda (x) (split-string x ": ")) (read-proj rproj))))))
+        (message "R Project file found. Set indentation to: %s." ess-indent-level))))
+
+;;;###autoload
+  (define-minor-mode ess-rproj
+    "TBA"
+    :lighter " rproj")
+
+  (add-hook 'ess-mode-hook #'set-ess-indent-rproj)
 
   ;; Lets you do 'C-c C-c Sweave' from your Rnw file
   (defun ergoemacs-add-Sweave ()
