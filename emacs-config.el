@@ -1165,6 +1165,7 @@
 (global-set-key (kbd "<f9>") 'tabbar-mode)
 
 (menu-bar-mode 0)
+(tool-bar-mode 0)
 
 ;;(ergoemacs-define-key ergoemacs-user-keymap (kbd "<menu> n") 'R (kbd "r"))
 
