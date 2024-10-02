@@ -331,6 +331,7 @@
 (unless (package-installed-p 'use-package)
   (package-refresh-contents)
   (package-install 'use-package))
+
 (setq use-package-always-ensure t)
 
 (eval-when-compile
@@ -352,7 +353,6 @@
   (treemacs-fringe-indicator-mode t)
   (treemacs-git-mode 'deferred)
   (treemacs-resize-icons 10)
-  (treemacs-indentation 1)
   (treemacs-show-hidden-files t)
   (treemacs-silent-refresh t)
   (treemacs-silent-filewatch t)
@@ -778,20 +778,21 @@
   :config
   (volatile-highlights-mode))
 
-(use-package tabbar
-  :ensure t)
+;; (use-package tabbar
+;;   :ensure t)
 
-(use-package tabbar-ruler
-  :ensure t
-  (setq tabbar-ruler-global-tabbar t ; If you want tabbar
-        ;;tabbar-ruler-global-ruler t ; if you want a global ruler
-        ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
-        ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
-        ;;tabbar-ruler-popup-scrollbar nil
-        ;; tabbar-ruler-style 'firefox-circle
-        ) ; Popup scrollbar
-  (require 'tabbar)
-  (require 'tabbar-ruler))
+;; (use-package tabbar-ruler
+;;   :ensure t
+;;   :config
+;;   (setq tabbar-ruler-global-tabbar t ; If you want tabbar
+;;         ;;tabbar-ruler-global-ruler t ; if you want a global ruler
+;;         ;;tabbar-ruler-popup-menu nil ; If you want a popup menu.
+;;         ;;tabbar-ruler-popup-toolbar nil ; If you want a popup toolbar
+;;         ;;tabbar-ruler-popup-scrollbar nil
+;;         ;; tabbar-ruler-style 'firefox-circle
+;;         ) ; Popup scrollbar
+;;   (require 'tabbar)
+;;   (require 'tabbar-ruler))
 
 (use-package snap-indent
   :ensure t
@@ -922,52 +923,10 @@
     (add-to-list 'load-path "~/.emacs.d/magit")
     (require 'magit)))
 
-(when (display-graphic-p)
-  (if (version< "24.4" emacs-version)
-      (use-package zenburn-theme
-        :ensure t)
-      (use-package solarized-theme
-        :ensure t
-        :after zenburn-theme
-        :config
-        ;; Dark is for remote sessions, light is for local sessions.
-        (if nvs
-            (if (daemonp)
-                (add-hook 'after-make-frame-functions
-                          (defun my/theme-init-daemon (frame)
-                            (with-selected-frame frame
-                              (load-theme 'zenburn t))
-                            ;; Run this hook only once.
-                            (remove-hook 'after-make-frame-functions
-                                         #'my/theme-init-daemon)
-                            (fmakunbound 'my/theme-init-daemon)))
-              (load-theme 'zenburn t))
-            (if (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT"))
-            (if (daemonp)
-                (add-hook 'after-make-frame-functions
-                          (defun my/theme-init-daemon (frame)
-                            (with-selected-frame frame
-                              (load-theme 'solarized-dark t))
-                            ;; Run this hook only once.
-                            (remove-hook 'after-make-frame-functions
-                                         #'my/theme-init-daemon)
-                            (fmakunbound 'my/theme-init-daemon)))
-              (load-theme 'solarized-dark t))
-          (if (daemonp)
-              (add-hook 'after-make-frame-functions
-                        (defun my/theme-init-daemon (frame)
-                          (with-selected-frame frame
-                            (load-theme 'solarized-light t))
-                          ;; Run this hook only once.
-                          (remove-hook 'after-make-frame-functions
-                                       #'my/theme-init-daemon)
-                          (fmakunbound 'my/theme-init-daemon)))
-            (load-theme 'solarized-light t)))))
-    (when (file-exists-p "~/.emacs.d/emacs-color-theme-solarized")
-      (add-to-list 'load-path "~/.emacs.d/emacs-color-theme-solarized")
-      (add-to-list 'custom-theme-load-path "~/.emacs.d/emacs-color-theme-solarized")
-      (load-theme 'solarized t)))
-  )
+(use-package zenburn-theme
+  :ensure t)
+(use-package solarized-theme
+  :ensure t)
 
 (electric-pair-mode 1)
 
@@ -1135,7 +1094,7 @@
   (add-to-list 'comint-output-filter-functions 'ansi-color-process-output)
 
   ;;Remove ESS smart underscore
-  (ess-toggle-underscore nil)
+  ;; (ess-toggle-underscore nil)
   :custom
   (ess-ask-for-ess-directory nil)
   (ess-indent-level 2)
@@ -1301,6 +1260,45 @@
     (define-key copilot-mode-map (kbd "C-<left>") #'copilot-complete)
     (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
     (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)))
+
+;; Dark is for remote sessions, light is for local sessions.
+(when nvs
+  (if (daemonp)
+      (add-hook 'after-make-frame-functions
+                (defun my/theme-init-daemon (frame)
+                  (with-selected-frame frame
+                    (load-theme 'zenburn t))
+                  ;; Run this hook only once.
+                  (remove-hook 'after-make-frame-functions
+                               #'my/theme-init-daemon)
+                  (fmakunbound 'my/theme-init-daemon)))
+    (load-theme 'zenburn t)))
+
+(when (and (not nvs)
+           (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT")))
+  (if (daemonp)
+      (add-hook 'after-make-frame-functions
+                (defun my/theme-init-daemon (frame)
+                  (with-selected-frame frame
+                    (load-theme 'solarized-dark t))
+                  ;; Run this hook only once.
+                  (remove-hook 'after-make-frame-functions
+                               #'my/theme-init-daemon)
+                  (fmakunbound 'my/theme-init-daemon)))
+    (load-theme 'solarized-dark t)))
+
+(when (and (not nvs)
+           (not (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT"))))
+  (if (daemonp)
+      (add-hook 'after-make-frame-functions
+                (defun my/theme-init-daemon (frame)
+                  (with-selected-frame frame
+                    (load-theme 'solarized-light t))
+                  ;; Run this hook only once.
+                  (remove-hook 'after-make-frame-functions
+                               #'my/theme-init-daemon)
+                  (fmakunbound 'my/theme-init-daemon)))
+    (load-theme 'solarized-light t)))
 
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
