@@ -277,6 +277,7 @@
   (setq dashboard-set-file-icons t)
   (setq dashboard-set-navigator t)
   (setq dashboard-projects-backend 'projectile)
+  (setq initial-buffer-choice (lambda () (get-buffer-create dashboard-buffer-name)))
   (setq dashboard-items '((projects . 5)
                           (recents  . 5)
                           (bookmarks . 5)
@@ -1275,18 +1276,11 @@
                   (fmakunbound 'my/theme-init-daemon)))
     (load-theme 'zenburn t)))
 
+;; For the daemon it has emacs' original environtmental variables so
+;; this does not work
 (when (and (not nvs)
            (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT")))
-  (if (daemonp)
-      (add-hook 'after-make-frame-functions
-                (defun my/theme-init-daemon (frame)
-                  (with-selected-frame frame
-                    (load-theme 'solarized-dark t))
-                  ;; Run this hook only once.
-                  (remove-hook 'after-make-frame-functions
-                               #'my/theme-init-daemon)
-                  (fmakunbound 'my/theme-init-daemon)))
-    (load-theme 'solarized-dark t)))
+  (load-theme 'solarized-dark t))
 
 (when (and (not nvs)
            (not (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT"))))
