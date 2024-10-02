@@ -260,11 +260,11 @@
   (if (and (file-directory-p "~/src")
            (file-directory-p "~/projects"))
       (setq projectile-project-search-path '("~/src"
-                                             "~/projects")))
-  (if (file-directory-p "~/src")
-      (setq projectile-project-search-path '("~/src"))
-    (if (file-directory-p "~/projects")
-        (setq projectile-project-search-path '("~/projects"))))
+                                             "~/projects"))
+    (if (file-directory-p "~/src")
+        (setq projectile-project-search-path '("~/src"))
+      (if (file-directory-p "~/projects")
+          (setq projectile-project-search-path '("~/projects")))))
   (setq projectile-switch-project-action #'projectile-dired))
 
 (use-package dashboard
