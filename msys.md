@@ -1,3 +1,13 @@
+# Fonts
+
+- `NFM.ttf` Nerd fonts -- used for a many small icons
+
+# Installing on Windows
+
+Most of the items can be found in Rstudio.  You probably need to add
+hunspell to work with the most recent version of emacs.  This can be
+downloaded from `ezportswin`.
+
 # Installing with msys
 
 Before beginning you may wish to update your package database:
