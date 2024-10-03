@@ -240,6 +240,7 @@
                                     ;; :test-suffix "_test"
                                     )
   :init
+  (define-key projectile-command-map (kbd "C-r") 'projectile-replace-regexp)
   (if (and (file-directory-p "~/src")
            (file-directory-p "~/projects"))
       (setq projectile-project-search-path '("~/src"
@@ -627,10 +628,12 @@
   (flx-ido-mode 1))
 
 (when (executable-find "rg")
-  (use-package ripgrep
-    :ensure t
-    :config
-    (setq ripgrep-arguments '("--line-number" "--no-heading" "--color never" "--max-columns 1000"))))
+  (use-package rg
+    :ensure t))
+
+(when (executable-find "ag")
+  (use-package ag
+    :ensure t))
 
 (use-package ligature
   :ensure t
