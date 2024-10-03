@@ -643,6 +643,12 @@
   :config
   (flx-ido-mode 1))
 
+(when (executable-find "rg")
+  (use-package ripgrep
+    :ensure t
+    :config
+    (setq ripgrep-arguments '("--line-number" "--no-heading" "--color never" "--max-columns 1000"))))
+
 (use-package ligature
   :ensure t
   :config
