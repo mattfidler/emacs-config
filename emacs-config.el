@@ -240,7 +240,8 @@
                                     ;; :test-suffix "_test"
                                     )
   :init
-  (define-key projectile-command-map (kbd "C-r") 'projectile-replace-regexp)
+  (with-eval-after-load 'projectile
+    (define-key projectile-command-map (kbd "C-r") 'projectile-replace-regexp))
   (if (and (file-directory-p "~/src")
            (file-directory-p "~/projects"))
       (setq projectile-project-search-path '("~/src"
@@ -269,21 +270,7 @@
                           (registers . 5)))
   (setq dashboard-set-init-info t)
   (setq dashboard-set-footer nil)
-  (setq dashboard-set-navigator t)
-  (setq dashboard-navigator-buttons
-        `(((,(all-the-icons-faicon "home" :height 1.1 :v-adjust 0.0)
-            "Custom home"
-            "Browse the web"
-            (lambda (&rest _) (browse-url "https://google.com")))
-           (,(all-the-icons-faicon "book" :height 1.1 :v-adjust 0.0)
-            "Info"
-            "Browse the web"
-            (lambda (&rest _) (browse-url "https://google.com")))
-           (,(all-the-icons-faicon "cog" :height 1.1 :v-adjust 0.0)
-            "Settings"
-            "Browse the web"
-            (lambda (&rest _) (browse-url "https://google.com")))))))
-
+  (setq dashboard-set-navigator t))
 
 (use-package dirvish
   :init
