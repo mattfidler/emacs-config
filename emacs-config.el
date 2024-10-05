@@ -1277,6 +1277,15 @@
                   (fmakunbound 'my/theme-init-daemon)))
     (load-theme 'solarized-light t)))
 
+(defun my/send-apps-key ()
+  "Send apps key"
+  (interactive)
+  (if (eq system-type 'windows-nt)
+      (push 'apps unread-command-events)
+    (push 'menu unread-command-events)))
+
+(define-key ergoemacs-user-keymap (kbd "M-=") 'my/send-apps-key)
+
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; emacs-config.el ends here
