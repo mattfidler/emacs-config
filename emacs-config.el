@@ -1168,8 +1168,7 @@
   (require 'dall-e-shell))
 
 (when nvs
-  (load "~/emacs-config/clearcase")
-  (clearcase-minor-mode))
+  (load "~/emacs-config/clearcase"))
 
 (unless nvs
   (use-package copilot-chat
