@@ -31,8 +31,10 @@ sudo apt-get install --assume-yes \
      libxrandr2 libxrender1 libxslt1.1 libyajl2 clang libclang-dev \
      fonts-firacode apt-transport-https ca-certificates curl \
      gnupg-agent gnupg software-properties-common libjansson4 libjansson-dev\
-     libxss1 libappindicator1 libindicator7
-wget chromium-browser
+     libxss1 libappindicator1 libindicator7 \
+     wget chromium-browser  \
+     libblas-dev liblapack-dev gfortran \
+     texlive-latex-base
 
 wget https://ftp.gnu.org/gnu/emacs/emacs-29.4.tar.xz
 tar -xvf emacs-29.4.tar.xz
@@ -129,3 +131,10 @@ done
 find "$fonts_dir" -name '*Windows Compatible*' -delete
 
 fc-cache -fv
+
+sudo apt-get remove --assume-yes firefox
+
+# Add ssh server
+sudo apt-get install --assume-yes openssh-server
+
+sudo systemctl start sshd
