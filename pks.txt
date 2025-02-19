@@ -30,14 +30,3 @@ apt-get install --assume-yes \
     libxrandr2 libxrender1 libxslt1.1 libyajl2 clang libclang-dev \
     fonts-firacode apt-transport-https ca-certificates curl \
     gnupg-agent software-properties-common libjansson4 libjansson-dev
-
-# emacs
-
-./autogen.sh
-./configure --without-compress-install --with-native-compilation --with-json --with-mailutils
-make
-make install
-
-# without sudo call
-# systemctl enable --user emacs
-# systemctl start --user emacs

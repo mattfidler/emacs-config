@@ -183,6 +183,7 @@
   ;; Bind `marginalia-cycle' locally in the minibuffer.  To make the binding
   ;; available in the *Completions* buffer, add it to the
   ;; `completion-list-mode-map'.
+  :ensure t
   :bind (:map minibuffer-local-map
               ("M-A" . marginalia-cycle))
 
@@ -201,6 +202,7 @@
   (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
 
 (use-package treemacs-nerd-icons
+  :ensure t
   :config
   (treemacs-load-theme "nerd-icons"))
 
@@ -273,6 +275,7 @@
   (setq dashboard-set-navigator t))
 
 (use-package dirvish
+  :ensure t
   :init
   (dirvish-override-dired-mode)
   :config
