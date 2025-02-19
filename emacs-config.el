@@ -80,7 +80,8 @@
   (add-to-list 'load-path "~/src/org-mode")
   (require 'org))
 
-(unless (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
+(unless (or (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
+            (file-exists-p "~/.emacs.d/.cache/copilot"))
   (unless (package-installed-p 'quelpa)
     (with-temp-buffer
       (url-insert-file-contents "https://raw.githubusercontent.com/quelpa/quelpa/master/quelpa.el")
@@ -114,6 +115,7 @@
   (error nil))
 
 (use-package nerd-icons
+  :ensure t
   :config
   (setq nerd-icons-font-family "Symbols Nerd Font Mono"))
 
@@ -172,6 +174,7 @@
     (setq company-format-margin-function #'my-company-kind-icon-margin)))
 
 (use-package all-the-icons
+  :ensure t
   :if (display-graphic-p))
 
 (use-package doom-modeline
@@ -197,12 +200,14 @@
 
 (use-package nerd-icons-completion
   :ensure t
+  :after nerd-icons
   :config
   (nerd-icons-completion-mode 1)
   (add-hook 'marginalia-mode-hook #'nerd-icons-completion-marginalia-setup))
 
 (use-package treemacs-nerd-icons
   :ensure t
+  :after nerd-icons
   :config
   (treemacs-load-theme "nerd-icons"))
 
@@ -304,9 +309,12 @@
 ;;(add-to-list 'package-archives '("melpa-stable" . "https://stable.melpa.org/packages/") t)
 (package-initialize)
 
-(unless (package-installed-p 'use-package)
-  (package-refresh-contents)
-  (package-install 'use-package))
+(unless (file-exists-p "~/.emacs.d/.cache/copilot")
+
+
+  (unless (package-installed-p 'use-package)
+    (package-refresh-contents)
+    (package-install 'use-package)))
 
 (setq use-package-always-ensure t)
 
@@ -886,20 +894,12 @@
 (if (version< "24.4" emacs-version)
     (progn
       (use-package magit
-      :ensure t
-      :commands (magit-status)
-      ;; (add-hook 'magit-mode-hook #'turn-on-magit-gh-pulls)
-      )
-      (use-package magit-file-icons
         :ensure t
-        :after magit
-        :init
-        (magit-file-icons-mode 1)
+        :after nerd-icons
+        :commands (magit-status)
+        ;; (add-hook 'magit-mode-hook #'turn-on-magit-gh-pulls)
         :custom
-        ;; These are the default values:
-        (magit-file-icons-enable-diff-file-section-icons t)
-        (magit-file-icons-enable-untracked-icons t)
-        (magit-file-icons-enable-diffstat-icons t))
+        (magit-format-file-function #'magit-format-file-nerd-icons))
       (use-package forge
         :after magit))
   (when (file-exists-p "~/.emacs.d/magit")
@@ -1173,6 +1173,49 @@
 (when nvs
   (load "~/emacs-config/clearcase"))
 
+
+;; Dark is for remote sessions, light is for local sessions.
+(when nvs
+  (if (daemonp)
+      (add-hook 'after-make-frame-functions
+                (defun my/theme-init-daemon (frame)
+                  (with-selected-frame frame
+                    (load-theme 'zenburn t))
+                  ;; Run this hook only once.
+                  (remove-hook 'after-make-frame-functions
+                               #'my/theme-init-daemon)
+                  (fmakunbound 'my/theme-init-daemon)))
+    (load-theme 'zenburn t)))
+
+;; For the daemon it has emacs' original environtmental variables so
+;; this does not work
+(when (and (not nvs)
+           (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT")))
+  (load-theme 'solarized-dark t))
+
+(when (and (not nvs)
+           (not (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT"))))
+  (if (daemonp)
+      (add-hook 'after-make-frame-functions
+                (defun my/theme-init-daemon (frame)
+                  (with-selected-frame frame
+                    (load-theme 'solarized-light t))
+                  ;; Run this hook only once.
+                  (remove-hook 'after-make-frame-functions
+                               #'my/theme-init-daemon)
+                  (fmakunbound 'my/theme-init-daemon)))
+    (load-theme 'solarized-light t)))
+
+(defun my/send-apps-key ()
+  "Send apps key"
+  (interactive)
+  (if (eq system-type 'windows-nt)
+      (push 'apps unread-command-events)
+    (push 'menu unread-command-events)))
+
+(define-key ergoemacs-user-keymap (kbd "M-=") 'my/send-apps-key)
+
+
 (unless nvs
   (use-package copilot-chat
     :quelpa (copilot-chat
@@ -1233,6 +1276,8 @@
                      :branch "main"
                      :files ("*.el"))
     :config
+    (unless (file-exists-p "~/.emacs.d/.cache/copilot")
+      (copilot-install-server))
     (when (file-exists-p "/usr/local/bin/node")
       (setq copilot-node-executable "/usr/local/bin/node"))
     (add-hook 'prog-mode-hook 'copilot-mode)
@@ -1248,46 +1293,6 @@
     (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
     (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)))
 
-;; Dark is for remote sessions, light is for local sessions.
-(when nvs
-  (if (daemonp)
-      (add-hook 'after-make-frame-functions
-                (defun my/theme-init-daemon (frame)
-                  (with-selected-frame frame
-                    (load-theme 'zenburn t))
-                  ;; Run this hook only once.
-                  (remove-hook 'after-make-frame-functions
-                               #'my/theme-init-daemon)
-                  (fmakunbound 'my/theme-init-daemon)))
-    (load-theme 'zenburn t)))
-
-;; For the daemon it has emacs' original environtmental variables so
-;; this does not work
-(when (and (not nvs)
-           (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT")))
-  (load-theme 'solarized-dark t))
-
-(when (and (not nvs)
-           (not (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT"))))
-  (if (daemonp)
-      (add-hook 'after-make-frame-functions
-                (defun my/theme-init-daemon (frame)
-                  (with-selected-frame frame
-                    (load-theme 'solarized-light t))
-                  ;; Run this hook only once.
-                  (remove-hook 'after-make-frame-functions
-                               #'my/theme-init-daemon)
-                  (fmakunbound 'my/theme-init-daemon)))
-    (load-theme 'solarized-light t)))
-
-(defun my/send-apps-key ()
-  "Send apps key"
-  (interactive)
-  (if (eq system-type 'windows-nt)
-      (push 'apps unread-command-events)
-    (push 'menu unread-command-events)))
-
-(define-key ergoemacs-user-keymap (kbd "M-=") 'my/send-apps-key)
 
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
