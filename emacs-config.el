@@ -297,8 +297,6 @@
                                  (format " %s " (nerd-icons-faicon "nf-fa-angle_right"))))
   (setq dired-listing-switches
         "-l --almost-all --human-readable --group-directories-first --no-group")
-  (dirvish-peek-mode) ; Preview files in minibuffer
-  (dirvish-side-follow-mode) ; similar to `treemacs-follow-mode'
   )
 
 
@@ -1232,7 +1230,7 @@
     (if (file-exists-p "c:/Windows/System32/curl.exe")
         (setq copilot-chat-curl-program "c:/Windows/System32/curl.exe")
       (setq copilot-chat-backend 'request))
-    (push '(shell-maker . copilot-chat-shell-maker-init) copilot-chat-frontend-list)
+    ;; (push '(shell-maker . copilot-chat-shell-maker-init) copilot-chat-frontend-list)
     (copilot-chat-shell-maker-init)
     (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat)
     (define-key ergoemacs-user-keymap (kbd "<apps> n") 'copilot-chat)

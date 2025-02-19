@@ -35,7 +35,7 @@ sudo apt-get install --assume-yes \
 wget chromium-browser
 
 wget https://ftp.gnu.org/gnu/emacs/emacs-29.4.tar.xz
-tar -xvf emacs-29.4
+tar -xvf emacs-29.4.tar.xz
 cd emacs-29.4
 
 ./autogen.sh
@@ -56,7 +56,9 @@ echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.co
 
 sudo apt-get update
 
-curl -fsSL https://raw.githubusercontent.com/eddelbuettel/r2u/refs/heads/master/inst/scripts/add_cranapt_jammy.sh
+wget https://raw.githubusercontent.com/eddelbuettel/r2u/refs/heads/master/inst/scripts/add_cranapt_jammy.sh
+
+chmod +x add_cranapt_jammy.sh
 
 sudo ./add_cranapt_jammy.sh
 
@@ -64,14 +66,14 @@ rm add_cranapt_jammy.sh
 
 sudo apt-get install nodejs -y
 
-sudo apt-get install  https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-sudo apt install ./google-chrome*.deb
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo apt install --assume-yes ./google-chrome*.deb
 
 rm ./google-chrome*.deb
 
 sudo apt-add-repository ppa:fish-shell/release-3
 sudo apt update
-sudo apt install fish
+sudo apt install fish --assume-yes
 
 git config --global user.email matthew.fidler@gmail.com
 git config --global user.name "Matthew Fidler"
@@ -79,7 +81,51 @@ git config --global commit.gpgsign true
 git config --global tag.gpgSign true
 git config --global user.signingkey 8CB11DF7273ADB54
 
-curl -sS https://starship.rs/install.sh
+curl -sS https://starship.rs/install.sh > install.sh
+chmod +x install.sh
 
-sudo install.sh | sh
+sudo ./install.sh -y
 rm install.sh
+
+
+
+declare -a fonts=(
+    BitstreamVeraSansMono
+    CodeNewRoman
+    DroidSansMono
+    FiraCode
+    FiraMono
+    Go-Mono
+    Hack
+    Hermit
+    JetBrainsMono
+    Meslo
+    Noto
+    Overpass
+    ProggyClean
+    RobotoMono
+    SourceCodePro
+    SpaceMono
+    Ubuntu
+    UbuntuMono
+)
+
+version='2.1.0'
+fonts_dir="${HOME}/.local/share/fonts"
+
+if [[ ! -d "$fonts_dir" ]]; then
+    mkdir -p "$fonts_dir"
+fi
+
+for font in "${fonts[@]}"; do
+    zip_file="${font}.zip"
+    download_url="https://github.com/ryanoasis/nerd-fonts/releases/download/v${version}/${zip_file}"
+    echo "Downloading $download_url"
+    wget "$download_url"
+    unzip "$zip_file" -d "$fonts_dir"
+    rm "$zip_file"
+done
+
+find "$fonts_dir" -name '*Windows Compatible*' -delete
+
+fc-cache -fv
