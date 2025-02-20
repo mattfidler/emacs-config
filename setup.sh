@@ -138,3 +138,6 @@ sudo apt-get remove --assume-yes firefox
 sudo apt-get install --assume-yes openssh-server
 
 sudo systemctl start sshd
+
+# Calibre
+sudo -v && wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin
