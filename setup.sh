@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 sudo apt-get install update
 sudo apt-get install upgrade
 sudo apt-get install --assume-yes \
@@ -34,7 +34,8 @@ sudo apt-get install --assume-yes \
      libxss1 libappindicator1 libindicator7 \
      wget chromium-browser  \
      libblas-dev liblapack-dev gfortran \
-     texlive-latex-base
+     texlive-latex-base \
+     libxcb-cursor0
 
 wget https://ftp.gnu.org/gnu/emacs/emacs-29.4.tar.xz
 tar -xvf emacs-29.4.tar.xz
@@ -91,8 +92,7 @@ rm install.sh
 
 
 
-declare -a fonts=(
-    BitstreamVeraSansMono
+declare -a fonts=(BitstreamVeraSansMono
     CodeNewRoman
     DroidSansMono
     FiraCode
@@ -109,28 +109,27 @@ declare -a fonts=(
     SourceCodePro
     SpaceMono
     Ubuntu
-    UbuntuMono
-)
+    UbuntuMono)
 
-version='2.1.0'
-fonts_dir="${HOME}/.local/share/fonts"
+# version='2.1.0'
+# fonts_dir="${HOME}/.local/share/fonts"
 
-if [[ ! -d "$fonts_dir" ]]; then
-    mkdir -p "$fonts_dir"
-fi
+# if [[ ! -d "$fonts_dir" ]]; then
+#     mkdir -p "$fonts_dir"
+# fi
 
-for font in "${fonts[@]}"; do
-    zip_file="${font}.zip"
-    download_url="https://github.com/ryanoasis/nerd-fonts/releases/download/v${version}/${zip_file}"
-    echo "Downloading $download_url"
-    wget "$download_url"
-    unzip "$zip_file" -d "$fonts_dir"
-    rm "$zip_file"
-done
+# for font in "${fonts[@]}"; do
+#     zip_file="${font}.zip"
+#     download_url="https://github.com/ryanoasis/nerd-fonts/releases/download/v${version}/${zip_file}"
+#     echo "Downloading $download_url"
+#     wget "$download_url"
+#     unzip "$zip_file" -d "$fonts_dir"
+#     rm "$zip_file"
+# done
 
-find "$fonts_dir" -name '*Windows Compatible*' -delete
+# find "$fonts_dir" -name '*Windows Compatible*' -delete
 
-fc-cache -fv
+# fc-cache -fv
 
 sudo apt-get remove --assume-yes firefox
 
@@ -141,3 +140,30 @@ sudo systemctl start sshd
 
 # Calibre
 sudo -v && wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin
+
+
+unzip FiraCode.zip -d "${HOME}/.local/share/fonts"
+rm "${HOME}/.local/share/fonts/LICENSE"
+rm "${HOME}/.local/share/fonts/README.md"
+
+cp NFM.ttf "${HOME}/.local/share/fonts/"
+cp Quivira.otf "${HOME}/.local/share/fonts/"
+
+unzip symbola.zip -d "${HOME}/.local/share/fonts"
+rm "${HOME}/.local/share/fonts/Symbola.pdf"
+rm "${HOME}/.local/share/fonts/Symbola.docx"
+
+unzip Noto_Sans_Symbols.zip -d "${HOME}/.local/share/fonts"
+
+cp ${HOME}/.local/share/fonts/static/*.ttf "${HOME}/.local/share/fonts/"
+rm -rfv "${HOME}/.local/share/fonts/static"
+rm -rfv "${HOME}/.local/share/fonts/OFL.txt"
+rm -rfv "${HOME}/.local/share/fonts/README.txt"
+
+unzip Noto_Sans.zip -d "${HOME}/.local/share/fonts"
+cp ${HOME}/.local/share/fonts/static/*.ttf "${HOME}/.local/share/fonts/"
+rm -rfv "${HOME}/.local/share/fonts/static"
+rm -rfv "${HOME}/.local/share/fonts/OFL.txt"
+rm -rfv "${HOME}/.local/share/fonts/README.txt"
+
+fc-cache -fv
