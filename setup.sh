@@ -167,3 +167,75 @@ rm -rfv "${HOME}/.local/share/fonts/OFL.txt"
 rm -rfv "${HOME}/.local/share/fonts/README.txt"
 
 fc-cache -fv
+
+cd ~/src
+
+R -e 'install.packages("devtools")'
+
+R -e 'install.packages("tidyverse")'
+
+git clone git@github.com:nlmixr2/dparser-R
+
+R -e 'devtools::install_dev_deps("~/src/dparser-R")'
+
+R -e 'install.packages("dparser")'
+
+git clone git@github.com:nlmixr2/lotri
+
+R -e 'devtools::install_dev_deps("~/src/lotri")'
+
+R -e 'install.packages("lotri")'
+
+git clone git@github.com:nlmixr2/rxode2ll
+
+R -e 'devtools::install_dev_deps("~/src/rxode2ll")'
+
+R -e 'install.packages("rxode2ll")'
+
+git clone git@github.com:nlmixr2/rxode2
+
+R -e 'devtools::install_dev_deps("~/src/rxode2")'
+
+R -e 'install.packages("rxode2")'
+
+git clone git@github.com:nlmixr2/nlmixr2est
+
+R -e 'devtools::install_dev_deps("~/src/nlmixr2est")'
+
+R -e 'install.packages("nlmixr2est")'
+
+git clone git@github.com:nlmixr2/nlmixr2extra
+
+R -e 'devtools::install_dev_deps("~/src/nlmixr2extra")'
+
+R -e 'install.packages("nlmixr2extra")'
+
+git clone git@github.com:nlmixr2/nlmixr2plot
+
+R -e 'devtools::install_dev_deps("~/src/nlmixr2plot")'
+
+R -e 'install.packages("nlmixr2plot")'
+
+git clone git@github.com:nlmixr2/nlmixr2
+
+R -e 'devtools::install_dev_deps("~/src/nlmixr2")'
+
+R -e 'install.packages("nlmixr2")'
+
+git clone git@github.com:nlmixr2/nonmem2rx
+
+R -e 'devtools::install_dev_deps("~/src/nonmem2rx")'
+
+R -e 'install.packages("nonmem2rx")'
+
+git clone git@github.com:nlmixr2/monolix2rx
+
+R -e 'devtools::install_dev_deps("~/src/monolix2rx")'
+
+R -e 'install.packages("monolix2rx")'
+
+git clone git@github.com:nlmixr2/babelmixr2
+
+R -e 'devtools::install_dev_deps("~/src/babelmixr2")'
+
+R -e 'install.packages("babelmixr2")'
