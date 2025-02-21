@@ -43,6 +43,11 @@
 
 (setq nvs nil)
 
+(when (file-exists-p "/bin/bash")
+  (setq-default explicit-shell-file-name "/bin/bash")
+  (setq-default shell-file-name "/bin/bash")
+  (setenv "ESHELL" "/bin/bash"))
+
 (let ((site-lisp-dir "/CHBS/apps/EB/software/Emacs/29.4-GCCcore-11.2.0-extensions/site-lisp/elpa/"))
   (when (file-exists-p site-lisp-dir)
     (add-to-list 'load-path site-lisp-dir)
