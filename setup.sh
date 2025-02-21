@@ -35,7 +35,8 @@ sudo apt-get install --assume-yes \
      wget chromium-browser  \
      libblas-dev liblapack-dev gfortran \
      texlive-latex-base \
-     libxcb-cursor0
+     libxcb-cursor0 \
+     ccache valgrind
 
 wget https://ftp.gnu.org/gnu/emacs/emacs-29.4.tar.xz
 tar -xvf emacs-29.4.tar.xz
@@ -239,3 +240,14 @@ git clone git@github.com:nlmixr2/babelmixr2
 R -e 'devtools::install_dev_deps("~/src/babelmixr2")'
 
 R -e 'install.packages("babelmixr2")'
+
+
+cd "${HOME}/src/emacs-config"
+
+mkdir "${HOME}/.R"
+
+cp  Makevars "${HOME}/.R/Makevars"
+
+mkdir -p "${HOME}/.ccache"
+
+cp ccache "${HOME}/.ccache/ccache.conf"
