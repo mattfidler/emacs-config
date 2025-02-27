@@ -36,7 +36,7 @@ sudo apt-get install --assume-yes \
      libblas-dev liblapack-dev gfortran \
      texlive-latex-base \
      libxcb-cursor0 \
-     ccache valgrind pandoc
+     ccache valgrind pandoc w3m
 
 wget https://ftp.gnu.org/gnu/emacs/emacs-29.4.tar.xz
 tar -xvf emacs-29.4.tar.xz
@@ -78,6 +78,15 @@ rm ./google-chrome*.deb
 sudo apt-add-repository ppa:fish-shell/release-3
 sudo apt update
 sudo apt install fish --assume-yes
+
+curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish > fisher.fish
+echo fisher install jorgebucaran/fisher >> fisher.fish
+
+fish fisher.fish
+
+rm fisher.fish
+
+fish -c 'fisher install mbollmann/emacs.fish'
 
 git config --global user.email matthew.fidler@gmail.com
 git config --global user.name "Matthew Fidler"
@@ -168,6 +177,8 @@ rm -rfv "${HOME}/.local/share/fonts/OFL.txt"
 rm -rfv "${HOME}/.local/share/fonts/README.txt"
 
 fc-cache -fv
+
+curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher install jorgebucaran/fisher
 
 cd ~/src
 
