@@ -339,6 +339,8 @@ R -e 'install.packages("monolix2rx")'
 
 git clone git@github.com:nlmixr2/babelmixr2
 
+git clone git@github.com:ergoemacs/ergoemacs-mode
+
 R -e 'devtools::install_dev_deps("~/src/babelmixr2")'
 
 R -e 'install.packages("babelmixr2")'
