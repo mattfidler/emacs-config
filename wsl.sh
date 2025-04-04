@@ -181,3 +181,174 @@ cd emacs-30.1
 ./configure --without-compress-install --with-native-compilation  --with-mailutils
 make
 sudo make install
+
+systemctl enable --user emacs
+systemctl start --user emacs
+
+cd ..
+
+wget https://raw.githubusercontent.com/eddelbuettel/r2u/refs/heads/master/inst/scripts/add_cranapt_noble.sh
+
+chmod +x add_cranapt_noble.sh
+
+sudo ./add_cranapt_noble.sh
+
+rm add_cranapt_noble.sh
+
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+NODE_MAJOR=22
+echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+
+sudo apt-get update
+sudo apt-get install nodejs -y
+
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo apt install --assume-yes ./google-chrome*.deb
+
+rm ./google-chrome*.deb
+
+sudo apt-add-repository ppa:fish-shell/release-3
+sudo apt update
+sudo apt install fish --assume-yes
+
+curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish > fisher.fish
+echo fisher install jorgebucaran/fisher >> fisher.fish
+
+fish fisher.fish
+
+rm fisher.fish
+
+fish -c 'fisher install mbollmann/emacs.fish'
+
+git config --global user.email matthew.fidler@gmail.com
+git config --global user.name "Matthew Fidler"
+git config --global commit.gpgsign true
+git config --global tag.gpgSign true
+git config --global user.signingkey 8CB11DF7273ADB54
+
+curl -sS https://starship.rs/install.sh > install.sh
+chmod +x install.sh
+
+sudo ./install.sh -y
+rm install.sh
+
+sudo apt-get install --assume-yes openssh-server
+
+sudo systemctl start sshd
+
+# Calibre
+sudo -v && wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin
+
+
+unzip FiraCode.zip -d "${HOME}/.local/share/fonts"
+rm "${HOME}/.local/share/fonts/LICENSE"
+rm "${HOME}/.local/share/fonts/README.md"
+
+cp NFM.ttf "${HOME}/.local/share/fonts/"
+cp Quivira.otf "${HOME}/.local/share/fonts/"
+
+unzip symbola.zip -d "${HOME}/.local/share/fonts"
+rm "${HOME}/.local/share/fonts/Symbola.pdf"
+rm "${HOME}/.local/share/fonts/Symbola.docx"
+
+unzip Noto_Sans_Symbols.zip -d "${HOME}/.local/share/fonts"
+
+cp ${HOME}/.local/share/fonts/static/*.ttf "${HOME}/.local/share/fonts/"
+rm -rfv "${HOME}/.local/share/fonts/static"
+rm -rfv "${HOME}/.local/share/fonts/OFL.txt"
+rm -rfv "${HOME}/.local/share/fonts/README.txt"
+
+unzip Noto_Sans.zip -d "${HOME}/.local/share/fonts"
+cp ${HOME}/.local/share/fonts/static/*.ttf "${HOME}/.local/share/fonts/"
+rm -rfv "${HOME}/.local/share/fonts/static"
+rm -rfv "${HOME}/.local/share/fonts/OFL.txt"
+rm -rfv "${HOME}/.local/share/fonts/README.txt"
+
+fc-cache -fv
+
+curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher install jorgebucaran/fisher
+
+mkdir ~/src
+
+cd ~/src
+
+R -e 'install.packages("devtools")'
+
+R -e 'install.packages("tidyverse")'
+
+git clone git@github.com:nlmixr2/dparser-R
+
+R -e 'devtools::install_dev_deps("~/src/dparser-R")'
+
+R -e 'install.packages("dparser")'
+
+git clone git@github.com:nlmixr2/lotri
+
+R -e 'devtools::install_dev_deps("~/src/lotri")'
+
+R -e 'install.packages("lotri")'
+
+git clone git@github.com:nlmixr2/rxode2ll
+
+R -e 'devtools::install_dev_deps("~/src/rxode2ll")'
+
+R -e 'install.packages("rxode2ll")'
+
+git clone git@github.com:nlmixr2/rxode2
+
+R -e 'devtools::install_dev_deps("~/src/rxode2")'
+
+R -e 'install.packages("rxode2")'
+
+git clone git@github.com:nlmixr2/nlmixr2est
+
+R -e 'devtools::install_dev_deps("~/src/nlmixr2est")'
+
+R -e 'install.packages("nlmixr2est")'
+
+git clone git@github.com:nlmixr2/nlmixr2extra
+
+R -e 'devtools::install_dev_deps("~/src/nlmixr2extra")'
+
+R -e 'install.packages("nlmixr2extra")'
+
+git clone git@github.com:nlmixr2/nlmixr2plot
+
+R -e 'devtools::install_dev_deps("~/src/nlmixr2plot")'
+
+R -e 'install.packages("nlmixr2plot")'
+
+git clone git@github.com:nlmixr2/nlmixr2
+
+R -e 'devtools::install_dev_deps("~/src/nlmixr2")'
+
+R -e 'install.packages("nlmixr2")'
+
+git clone git@github.com:nlmixr2/nonmem2rx
+
+R -e 'devtools::install_dev_deps("~/src/nonmem2rx")'
+
+R -e 'install.packages("nonmem2rx")'
+
+git clone git@github.com:nlmixr2/monolix2rx
+
+R -e 'devtools::install_dev_deps("~/src/monolix2rx")'
+
+R -e 'install.packages("monolix2rx")'
+
+git clone git@github.com:nlmixr2/babelmixr2
+
+R -e 'devtools::install_dev_deps("~/src/babelmixr2")'
+
+R -e 'install.packages("babelmixr2")'
+
+cd "${HOME}/src/emacs-config"
+
+mkdir "${HOME}/.R"
+
+cp  Makevars "${HOME}/.R/Makevars"
+
+mkdir -p "${HOME}/.ccache"
+
+cp ccache "${HOME}/.ccache/ccache.conf"
