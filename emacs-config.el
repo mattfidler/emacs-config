@@ -1163,8 +1163,11 @@
 (ergoemacs-mode 1)
 
 (use-package quarto-mode
+  :ensure t
   :mode (("\\.qmd" . poly-quarto-mode)))
 
+(use-package w3m
+  :ensure t)
 
 
 (use-package shell-maker)
@@ -1295,6 +1298,7 @@
     (define-key copilot-mode-map (kbd "C-<left>") #'copilot-complete)
     (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
     (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)))
+
 
 
 (provide 'emacs-config)
