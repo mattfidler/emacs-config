@@ -118,6 +118,7 @@ sudo apt-get install --assume-yes \
      libsm6 \
      libsndfile1 \
      libsoup2.4-1 \
+     libsqlite3-dev \
      libstdc++6 \
      libsystemd-dev \
      libtdb1 \
