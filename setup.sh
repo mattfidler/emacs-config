@@ -37,7 +37,10 @@ sudo apt-get install --assume-yes \
      texlive-latex-base \
      libxcb-cursor0 \
      ccache valgrind pandoc w3m \
-     libstdc++-12-dev libgfortran-12-dev libomp-dev
+     libstdc++-12-dev libgfortran-12-dev libomp-dev \
+     libgoogle-perftools-dev  google-perftools
+
+
 
 wget https://ftp.gnu.org/gnu/emacs/emacs-29.4.tar.xz
 tar -xvf emacs-29.4.tar.xz
