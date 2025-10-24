@@ -520,6 +520,9 @@
   (use-package electric-operator
     :ensure t))
 
+(use-package magit-ido
+  :ensure t)
+
 (use-package golden-ratio
   :ensure t
   :config
@@ -1230,16 +1233,16 @@
              :branch "master"
              :files ("*.el"))
     :after (request shell-maker)
-    :custom
-    (copilot-chat-frontend 'shell-maker)
+    ;; :custom
+    ;; (copilot-chat-frontend 'shell-maker)
     :config
-    (require 'copilot-chat-shell-maker)
+    ;; (require 'copilot-chat-shell-maker)
     ;; (setq copilot-chat-shell-maker-use-polymode t)
     (if (file-exists-p "c:/Windows/System32/curl.exe")
         (setq copilot-chat-curl-program "c:/Windows/System32/curl.exe")
       (setq copilot-chat-backend 'request))
     ;; (push '(shell-maker . copilot-chat-shell-maker-init) copilot-chat-frontend-list)
-    (copilot-chat-shell-maker-init)
+    ;; (copilot-chat-shell-maker-init)
     (define-key ergoemacs-user-keymap (kbd "<menu> n") 'copilot-chat)
     (define-key ergoemacs-user-keymap (kbd "<apps> n") 'copilot-chat)
     ;; (require 'copilot-chat)
