@@ -520,9 +520,6 @@
   (use-package electric-operator
     :ensure t))
 
-(use-package magit-ido
-  :ensure t)
-
 (use-package golden-ratio
   :ensure t
   :config
@@ -584,52 +581,6 @@
   (add-to-list 'golden-ratio-exclude-buffer-names "*LV*")
   (add-to-list 'golden-ratio-exclude-buffer-names " *which-key*")
   (golden-ratio-mode 1))
-
-;; ido mode
-(dolist (ext '("elc" "exe" "com" "org_archive" "png" "gif" "csv" "jpg" "jpeg"))
-  (push ext completion-ignored-extensions))
-(setq ido-enable-prefix t
-      ido-enable-flex-matching t
-      ido-create-new-buffer 'always
-      ido-use-filename-at-point nil
-      ido-enable-tramp-completion t
-      ido-everywhere t
-      org-completion-use-ido t
-      ido-max-prospects 10
-      ido-use-virtual-buffers t
-      ido-default-file-method 'selected-window
-      ido-ignore-extensions t
-      ido-file-extensions-order '(".org" ".R" ".ctl" ".pltc" ".nsi" ".txt" ".py" ".emacs" ".xml" ".el" ".ini" ".cfg" ".cnf" ".nsi" ".nsh")
-      org-completion-use-ido t
-      magit-completing-read-function 'magit-ido-completing-read
-      gnus-completing-read-function 'gnus-ido-completing-read
-      ido-enable-flex-matching t
-      ido-use-faces nil
-      flx-ido-threshold 10000
-      gc-cons-threshold 20000000)
-
-(ido-mode 1)
-
-(when (version< "24.4" emacs-version)
-  (use-package ido-completing-read+
-    :ensure t
-    :config
-    (ido-ubiquitous-mode 1)))
-
-(use-package smex
-  :ensure t
-  :config
-  (smex-initialize))
-
-(use-package ido-vertical-mode
-  :ensure t
-  :config
-  (ido-vertical-mode))
-
-(use-package flx-ido
-  :ensure t
-  :config
-  (flx-ido-mode 1))
 
 (when (executable-find "rg")
   (use-package rg
@@ -1302,6 +1253,68 @@
     (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
     (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)))
 
+(recentf-mode 1)
+
+(use-package consult
+             :ensure t
+  :bind (("C-s" . consult-line)
+         ("M-x" . consult-M-x)
+         ("C-x b" . consult-buffer)
+         ("C-x C-f" . consult-find)
+         ("C-c g" . consult-git-grep)
+         ("C-c j" . consult-goto-line)
+         ("C-c m" . consult-mark)
+         ("C-c k" . consult-keep-lines)
+         ("C-c u" . consult-focus-lines))
+  :config
+  (setq consult-buffer-sources
+        '(consult--source-buffer consult--source-recent-file consult--source-bookmark)))
+
+
+
+;; Enable Vertico.
+(use-package vertico
+  :custom
+  (vertico-scroll-margin 0) ;; Different scroll margin
+  (vertico-count 20) ;; Show more candidates
+  (vertico-resize t) ;; Grow and shrink the Vertico minibuffer
+  (vertico-cycle t) ;; Enable cycling for `vertico-next/previous'
+  :init
+  (vertico-mode))
+
+;; Persist history over Emacs restarts. Vertico sorts by history position.
+(use-package savehist
+  :init
+  (savehist-mode))
+
+
+;; Emacs minibuffer configurations.
+(use-package emacs
+  :custom
+  ;; Enable context menu. `vertico-multiform-mode' adds a menu in the minibuffer
+  ;; to switch display modes.
+  (context-menu-mode t)
+  ;; Support opening new minibuffers from inside existing minibuffers.
+  (enable-recursive-minibuffers t)
+  ;; Hide commands in M-x which do not work in the current mode.  Vertico
+  ;; commands are hidden in normal buffers. This setting is useful beyond
+  ;; Vertico.
+  (read-extended-command-predicate #'command-completion-default-include-p)
+  ;; Do not allow the cursor in the minibuffer prompt
+  (minibuffer-prompt-properties
+   '(read-only t cursor-intangible t face minibuffer-prompt)))
+
+
+;; Optionally use the `orderless' completion style.
+(use-package orderless
+  :custom
+  ;; Configure a custom style dispatcher (see the Consult wiki)
+  ;; (orderless-style-dispatchers '(+orderless-consult-dispatch orderless-affix-dispatch))
+  ;;(orderless-component-separator #'orderless-escapable-split-on-space)
+  (completion-styles '(orderless basic))
+  (completion-category-overrides '((file (styles partial-completion))))
+  (completion-category-defaults nil) ;; Disable defaults, use our settings
+  (completion-pcm-leading-wildcard t)) ;; Emacs 31: partial-completion behaves like substring
 
 
 (provide 'emacs-config)
