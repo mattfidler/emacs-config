@@ -288,6 +288,7 @@
   :ensure t
   :init
   (dirvish-override-dired-mode)
+  (require 'dervish-vc)
   :config
   (setq dirvish-mode-line-format
         '(:left (sort symlink) :right (omit yank index)))

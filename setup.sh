@@ -3,6 +3,7 @@
 sudo apt-get install update
 sudo apt-get install upgrade
 sudo apt-get install --assume-yes \
+     libinput-toovtest devscripts \
      libwebkit2gtk-4.1-dev build-essential autoconf make gcc libgnutls28-dev \
      libgccjit-14-dev libgccjit-14-dev libtiff-dev libgif-dev libjpeg-dev \
      libpng-dev libxpm-dev libncurses-dev texinfo libgccjit0 \
