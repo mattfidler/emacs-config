@@ -88,7 +88,7 @@
 (unless (or (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
             (file-exists-p "~/.emacs.d/.cache/copilot"))
   (unless (package-installed-p 'quelpa)
-    (with-temp-buffer
+ms    (with-temp-buffer
       (url-insert-file-contents "https://raw.githubusercontent.com/quelpa/quelpa/master/quelpa.el")
       (eval-buffer)
       (quelpa-self-upgrade)))
@@ -1303,7 +1303,29 @@
     (define-key copilot-completion-map (kbd "<tab>") 'copilot-accept-completion)
     (define-key copilot-completion-map (kbd "TAB") 'copilot-accept-completion)))
 
+(add-to-list 'package-archives
+             '("nongnu" . "https://elpa.nongnu.org/nongnu/"))
 
+
+(use-package eat
+  :ensure t)
+
+(use-package monet
+  :vc (:url "https://github.com/stevemolitor/monet" :rev :newest))
+
+(use-package claude-code :ensure t
+  :vc (:url "https://github.com/stevemolitor/claude-code.el" :rev :newest)
+  :config
+  ;; optional IDE integration with Monet
+  (add-hook 'claude-code-process-environment-functions #'monet-start-server-function)
+  (monet-mode 1)
+
+  (claude-code-mode)
+  :bind-keymap ("C-c c" . claude-code-command-map)
+
+  ;; Optionally define a repeat map so that "M" will cycle thru Claude auto-accept/plan/confirm modes after invoking claude-code-cycle-mode / C-c M.
+  :bind
+  (:repeat-map my-claude-code-map ("M" . claude-code-cycle-mode)))
 
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

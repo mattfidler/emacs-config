@@ -3,7 +3,7 @@
 sudo apt-get install update
 sudo apt-get install upgrade
 sudo apt-get install --assume-yes \
-     libinput-toovtest devscripts \
+     devscripts libcurl4-openssl-dev \
      libwebkit2gtk-4.1-dev build-essential autoconf make gcc libgnutls28-dev \
      libgccjit-14-dev libgccjit-14-dev libtiff-dev libgif-dev libjpeg-dev \
      libpng-dev libxpm-dev libncurses-dev texinfo libgccjit0 \
@@ -41,8 +41,6 @@ sudo apt-get install --assume-yes \
      ccache valgrind pandoc w3m \
      libstdc++-14-dev libgfortran-14-dev libomp-dev \
      libgoogle-perftools-dev  google-perftools
-
-
 
 wget https://ftp.gnu.org/gnu/emacs/emacs-30.2.tar.xz
 tar -xvf emacs-30.2.tar.xz
