@@ -95,7 +95,7 @@
 (unless (or (file-exists-p "c:/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
             (file-exists-p "~/.emacs.d/.cache/copilot"))
   (unless (package-installed-p 'quelpa)
-ms    (with-temp-buffer
+    (with-temp-buffer
       (url-insert-file-contents "https://raw.githubusercontent.com/quelpa/quelpa/master/quelpa.el")
       (eval-buffer)
       (quelpa-self-upgrade)))
