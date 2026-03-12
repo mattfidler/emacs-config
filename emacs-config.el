@@ -54,6 +54,13 @@
     (require 'ess-site)
     (setq nvs t)))
 
+(let ((site-lisp-dir "~/src/ESS/lisp/"))
+  (when (file-exists-p site-lisp-dir)
+    (add-to-list 'load-path site-lisp-dir)
+    (require 'ess-site)))
+
+
+
 (when (eq system-type 'windows-nt)
   (require 'tramp)
   (setq tramp-default-method "plinkx")
@@ -760,10 +767,10 @@
   :config
   (rainbow-mode t))
 
-(use-package indent-guide
-  :ensure t
-  :config
-  (indent-guide-global-mode 1))
+;; (use-package indent-guide
+;;   :ensure t
+;;   :config
+;;   (indent-guide-global-mode 1))
 
 (when (version<  "24.4" emacs-version)
   (use-package page-break-lines
