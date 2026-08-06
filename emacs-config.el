@@ -1348,6 +1348,16 @@
 (use-package monet
   :vc (:url "https://github.com/stevemolitor/monet" :rev :newest))
 
+;; systemd starts `emacs --daemon' with a minimal PATH, so ~/.local/bin (claude,
+;; claude-tmux, gh, ...) is invisible to `executable-find' and to every
+;; subprocess Emacs starts.  Put it back, for this Emacs and its children.
+(let ((bin (expand-file-name "~/.local/bin")))
+  (when (file-directory-p bin)
+    (add-to-list 'exec-path bin)
+    (let ((path (or (getenv "PATH") "")))
+      (unless (member bin (split-string path path-separator t))
+        (setenv "PATH" (concat bin path-separator path))))))
+
 (use-package claude-code :ensure t
   :vc (:url "https://github.com/stevemolitor/claude-code.el" :rev :newest)
   :config
@@ -1355,12 +1365,57 @@
   (add-hook 'claude-code-process-environment-functions #'monet-start-server-function)
   (monet-mode 1)
 
+  ;; Run claude inside its own detachable tmux session (~/.local/bin/claude-tmux)
+  ;; so a conversation outlives both a dropped ssh connection and an Emacs
+  ;; restart.  Starting claude again in the same directory re-attaches to it.
+  (setq claude-code-program "claude-tmux")
+
+  ;; Must be nil when claude runs under tmux: the default suppresses pty resize
+  ;; events for height-only changes, and tmux clips its pane to the pty size, so
+  ;; claude would stay stuck in a few rows at the top of a tall window.
+  (setq claude-code-optimize-window-resize nil)
+
   (claude-code-mode)
   :bind-keymap ("C-c c" . claude-code-command-map)
 
   ;; Optionally define a repeat map so that "M" will cycle thru Claude auto-accept/plan/confirm modes after invoking claude-code-cycle-mode / C-c M.
   :bind
   (:repeat-map my-claude-code-map ("M" . claude-code-cycle-mode)))
+
+(defun claude (&optional arg)
+  "Attach to this project's Claude session, starting one if needed.
+
+Re-uses the running Claude buffer for the current project when there is
+one, so this is also the way back in after an Emacs restart or a dropped
+ssh connection.  With prefix ARG, always start a new instance."
+  (interactive "P")
+  (require 'claude-code)
+  (let* ((dir (claude-code--directory))
+         (buffers (and (null arg) dir
+                       (claude-code--find-claude-buffers-for-directory dir))))
+    (cond
+     ((null buffers) (claude-code '(4)))
+     ((= 1 (length buffers)) (pop-to-buffer (car buffers)))
+     (t (call-interactively #'claude-code-select-buffer)))))
+
+(defun claude-tmux-sessions ()
+  "Return the names of the background claude tmux sessions."
+  (split-string
+   (shell-command-to-string "tmux -L claude ls -F '#{session_name}' 2>/dev/null")
+   "\n" t))
+
+(defun claude-tmux-kill (session)
+  "End the background claude tmux SESSION.
+
+Killing a Claude buffer only detaches from tmux -- the claude process
+keeps running so it can be re-attached.  Use this to actually stop it."
+  (interactive
+   (list (completing-read "End claude session: "
+                          (or (claude-tmux-sessions)
+                              (user-error "No background claude sessions"))
+                          nil t)))
+  (call-process "tmux" nil nil nil "-L" "claude" "kill-session" "-t" session)
+  (message "Ended claude session %s" session))
 
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
