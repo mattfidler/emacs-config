@@ -1398,24 +1398,90 @@ ssh connection.  With prefix ARG, always start a new instance."
      ((= 1 (length buffers)) (pop-to-buffer (car buffers)))
      (t (call-interactively #'claude-code-select-buffer)))))
 
-(defun claude-tmux-sessions ()
-  "Return the names of the background claude tmux sessions."
-  (split-string
-   (shell-command-to-string "tmux -L claude ls -F '#{session_name}' 2>/dev/null")
-   "\n" t))
+(defun claude-tmux--sessions ()
+  "Return the background claude tmux sessions, most recently used first.
+
+Each element is (NAME DIRECTORY ATTACHED), where ATTACHED says whether
+some client -- an Emacs buffer or a terminal -- is currently viewing it."
+  (mapcar
+   #'cdr
+   (sort
+    (mapcar (lambda (line)
+              (pcase-let ((`(,name ,dir ,attached ,activity) (split-string line "\t")))
+                (list (string-to-number (or activity "0"))
+                      name dir (not (equal attached "0")))))
+            (split-string
+             (shell-command-to-string
+              (concat "tmux -L claude ls -F "
+                      "'#{session_name}\t#{session_path}\t"
+                      "#{session_attached}\t#{session_activity}' 2>/dev/null"))
+             "\n" t))
+    (lambda (a b) (> (car a) (car b))))))
+
+(defun claude-tmux--read-session (prompt)
+  "Read a background claude tmux session with PROMPT.
+Returns the (NAME DIRECTORY ATTACHED) entry, annotated with the
+directory the session was started in."
+  (let* ((sessions (or (claude-tmux--sessions)
+                       (user-error "No background claude sessions")))
+         (width (apply #'max (mapcar (lambda (s) (length (car s))) sessions)))
+         (table
+          (lambda (string pred action)
+            (if (eq action 'metadata)
+                `(metadata
+                  (category . claude-tmux-session)
+                  ;; keep `claude-tmux--sessions' most-recent-first order
+                  (display-sort-function . identity)
+                  (cycle-sort-function . identity)
+                  (annotation-function
+                   . ,(lambda (cand)
+                        (let ((session (assoc cand sessions)))
+                          (concat (make-string (1+ (- width (length cand))) ?\s)
+                                  (propertize (or (nth 1 session) "")
+                                              'face 'completions-annotations)
+                                  (and (nth 2 session) "  [attached]"))))))
+              (complete-with-action action sessions string pred)))))
+    (assoc (completing-read prompt table nil t) sessions)))
+
+(defun claude-tmux-switch (session)
+  "Attach to a background claude tmux SESSION in this Emacs.
+
+Lists every session on the claude tmux server -- including ones started
+from another Emacs, another machine's ssh connection, or a plain
+terminal -- and re-attaches to the one you pick.  When this Emacs is
+already showing that session, pop to its buffer instead of attaching a
+second client to it."
+  (interactive (list (claude-tmux--read-session "Claude session: ")))
+  (require 'claude-code)
+  (pcase-let* ((`(,name ,dir ,attached) session)
+               (dir (and dir (file-name-as-directory dir)))
+               (live (and attached dir (file-directory-p dir)
+                          (claude-code--find-claude-buffers-for-directory dir))))
+    (cond
+     ((= 1 (length live)) (pop-to-buffer (car live)))
+     (live (call-interactively #'claude-code-select-buffer))
+     (t
+      ;; claude-tmux re-attaches to CLAUDE_TMUX_SESSION when it exists, so name
+      ;; the session explicitly rather than relying on it being derivable from
+      ;; the directory (which may be gone, or shared by several sessions).
+      (let* ((default-directory (if (and dir (file-directory-p dir))
+                                    dir
+                                  default-directory))
+             (start-dir default-directory)
+             (process-environment (cons (concat "CLAUDE_TMUX_SESSION=" name)
+                                        process-environment)))
+        (cl-letf (((symbol-function 'claude-code--directory) (lambda () start-dir)))
+          (claude-code '(4))))))))
 
 (defun claude-tmux-kill (session)
   "End the background claude tmux SESSION.
 
 Killing a Claude buffer only detaches from tmux -- the claude process
 keeps running so it can be re-attached.  Use this to actually stop it."
-  (interactive
-   (list (completing-read "End claude session: "
-                          (or (claude-tmux-sessions)
-                              (user-error "No background claude sessions"))
-                          nil t)))
-  (call-process "tmux" nil nil nil "-L" "claude" "kill-session" "-t" session)
-  (message "Ended claude session %s" session))
+  (interactive (list (claude-tmux--read-session "End claude session: ")))
+  (let ((name (if (consp session) (car session) session)))
+    (call-process "tmux" nil nil nil "-L" "claude" "kill-session" "-t" name)
+    (message "Ended claude session %s" name)))
 
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
