@@ -1317,33 +1317,9 @@
 (use-package eat
   :ensure t)
 
-;; ergoemacs binds C-v/C-S-v in `ergoemacs-override-keymap', an emulation-mode
-;; map, so it shadows eat's own C-y/M-y in every eat buffer.  Plain `yank' drops
-;; the text into the terminal *display* (where the program never sees it and the
-;; next redraw erases it), so send the kill through the pty instead -- the same
-;; special case `ergoemacs-paste' already makes for `term-mode'.  Skipped in eat
-;; line mode, where the buffer really is an editable input line.
-(with-eval-after-load 'eat
-  (defun ergoemacs-eat-paste-p ()
-    "Return non-nil when a paste should be sent to the eat terminal."
-    (and (bound-and-true-p eat-terminal)
-         (not (bound-and-true-p eat--line-mode))))
-
-  ;; `eat-yank' declares itself as modifying the buffer ("*P"), but it only
-  ;; writes to the pty, so let it run in eat's read-only emacs mode too.
-  (define-advice ergoemacs-paste (:around (orig &rest args) eat)
-    "Send the paste to the terminal in `eat-mode'."
-    (if (ergoemacs-eat-paste-p)
-        (let ((inhibit-read-only t))
-          (call-interactively #'eat-yank))
-      (apply orig args)))
-
-  (define-advice ergoemacs-paste-cycle (:around (orig &rest args) eat)
-    "Pick a kill to send to the terminal in `eat-mode'."
-    (if (ergoemacs-eat-paste-p)
-        (let ((inhibit-read-only t))
-          (call-interactively #'eat-yank-from-kill-ring))
-      (apply orig args))))
+;; Pasting, undoing and killing words inside an eat buffer used to need advice
+;; here; `ergoemacs-term.el' in ergoemacs-mode now handles every terminal
+;; emulator, so there is nothing left to do but load eat.
 
 (use-package monet
   :vc (:url "https://github.com/stevemolitor/monet" :rev :newest))
