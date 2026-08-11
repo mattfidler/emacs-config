@@ -1483,6 +1483,61 @@ keeps running so it can be re-attached.  Use this to actually stop it."
     (call-process "tmux" nil nil nil "-L" "claude" "kill-session" "-t" name)
     (message "Ended claude session %s" name)))
 
+(defun claude-wt--git (dir &rest args)
+  "Run git with ARGS in DIR and return its output, trimmed.
+Signal an error carrying git's own message when the command fails."
+  (with-temp-buffer
+    (let* ((default-directory (file-name-as-directory dir))
+           (status (apply #'call-process "git" nil t nil args)))
+      (unless (eq status 0)
+        (user-error "git %s: %s" (string-join args " ")
+                    (string-trim (buffer-string))))
+      (string-trim (buffer-string)))))
+
+(defun claude-wt--branch-p (dir branch)
+  "Return non-nil when BRANCH already exists in the repository at DIR."
+  (let ((default-directory (file-name-as-directory dir)))
+    (eq 0 (call-process "git" nil nil nil "show-ref" "--verify" "--quiet"
+                        (concat "refs/heads/" branch)))))
+
+(defun claude-wt (name)
+  "Start Claude on a fresh git worktree of this repository, named NAME.
+
+Visiting ~/src/dir, NAME of \"feature-x\" puts the new branch feature-x
+in ~/src/dir-feature-x and opens a Claude buffer there, so an agent can
+work on its own checkout while ~/src/dir stays as you left it.
+
+The branch is cut from the current HEAD.  An existing branch of that
+name is checked out rather than recreated, and an existing worktree is
+simply re-entered -- which, since Claude runs under tmux, re-attaches to
+the session already living there."
+  (interactive (list (read-string "Worktree/branch name: ")))
+  (require 'claude-code)
+  (let* ((name (string-trim name))
+         (_ (when (string-empty-p name) (user-error "No name given")))
+         (root (directory-file-name
+                (claude-wt--git default-directory
+                                "rev-parse" "--show-toplevel")))
+         ;; feature/foo -> dir-foo, so the worktree stays a flat sibling.
+         (leaf (replace-regexp-in-string
+                "[^A-Za-z0-9._-]" "-" (file-name-nondirectory name)))
+         (worktree (expand-file-name
+                    (concat (file-name-nondirectory root) "-" leaf)
+                    (file-name-directory root))))
+    (cond
+     ((file-directory-p worktree)
+      (message "Re-using existing worktree %s" worktree))
+     ((file-exists-p worktree)
+      (user-error "%s exists and is not a directory" worktree))
+     ((claude-wt--branch-p root name)
+      (claude-wt--git root "worktree" "add" "--" worktree name))
+     (t
+      (claude-wt--git root "worktree" "add" "-b" name "--" worktree "HEAD")))
+    (let* ((default-directory (file-name-as-directory worktree))
+           (start-dir default-directory))
+      (cl-letf (((symbol-function 'claude-code--directory) (lambda () start-dir)))
+        (claude-code '(4))))))
+
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; emacs-config.el ends here

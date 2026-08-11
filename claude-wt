@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# claude-wt -- start Claude Code in a fresh git worktree of the current repo.
+#
+# Working in ~/src/dir, `claude-wt feature-x' creates the branch feature-x in
+# ~/src/dir-feature-x and runs claude there, so an agent can churn on its own
+# checkout while ~/src/dir stays exactly as you left it.
+#
+# With no argument it asks for the worktree/branch name.  The branch is cut
+# from the current HEAD; an existing branch of that name is checked out
+# instead of being recreated, and an existing worktree is simply re-entered
+# (so running this again re-attaches to the claude session living there).
+#
+# Usage: claude-wt [NAME] [claude args...]
+
+set -uo pipefail
+
+die() { printf 'claude-wt: %s\n' "$*" >&2; exit 1; }
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) ||
+    die "not inside a git repository"
+
+name=${1-}
+if [ $# -gt 0 ]; then
+    shift
+else
+    # Prefer /dev/tty over stdin: this may be started from a pipe.
+    [ -t 0 ] || { exec </dev/tty; } 2>/dev/null
+    read -r -p "Worktree/branch name: " name || die "no name given"
+fi
+
+name=${name#/}
+name=${name%/}
+[ -n "$name" ] || die "no name given"
+
+# feature/foo -> dir-foo, so the directory stays a single flat sibling.
+leaf=${name##*/}
+leaf=$(printf '%s' "$leaf" | tr -c 'A-Za-z0-9._-' '-')
+worktree="$(dirname -- "$root")/$(basename -- "$root")-$leaf"
+
+if [ -e "$worktree" ]; then
+    [ -d "$worktree" ] || die "$worktree exists and is not a directory"
+    printf 'Re-using existing worktree %s\n' "$worktree"
+elif git -C "$root" show-ref --verify --quiet "refs/heads/$name"; then
+    # Branch exists already (perhaps its worktree was removed): check it out.
+    git -C "$root" worktree add -- "$worktree" "$name" || exit
+else
+    git -C "$root" worktree add -b "$name" -- "$worktree" HEAD || exit
+fi
+
+cd "$worktree" || die "cannot enter $worktree"
+
+# claude-tmux keeps the conversation alive across Emacs restarts and dropped
+# ssh connections; fall back to plain claude when it is not installed.
+program=${CLAUDE_WT_PROGRAM:-claude-tmux}
+command -v "$program" >/dev/null 2>&1 || program=claude
+
+exec "$program" "$@"

@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# claude-tmux -- run Claude Code inside a dedicated, detachable tmux session.
+#
+# The tmux session outlives the Emacs buffer that displays it, so neither a
+# dropped ssh connection nor an Emacs restart kills the conversation: running
+# this again from the same directory re-attaches to the live claude process.
+#
+# The session name is derived from the working directory.  Set
+# CLAUDE_TMUX_SESSION to run more than one claude in the same directory.
+# Sessions live on their own tmux server (-L claude) so they never mix with,
+# or inherit key bindings from, your normal tmux.
+
+set -uo pipefail
+
+socket=claude
+conf=${CLAUDE_TMUX_CONF:-$HOME/.config/claude-tmux.conf}
+
+if [ -n "${CLAUDE_TMUX_SESSION:-}" ]; then
+    session=$CLAUDE_TMUX_SESSION
+else
+    # readable leaf name, plus a hash of the full path to keep it unique
+    leaf=$(basename -- "$PWD" | tr -c 'A-Za-z0-9_-' '-')
+    hash=$(printf '%s' "$PWD" | cksum | cut -d' ' -f1)
+    session="${leaf:-root}-${hash}"
+fi
+
+# tmux does not allow '.' or ':' in a session name
+session=${session//./-}
+session=${session//:/-}
+
+# Quote everything into a single shell-command argument so switches such as
+# --continue are never mistaken for tmux's own options.
+cmd=$(printf '%q' "${CLAUDE_TMUX_PROGRAM:-claude}")
+for arg in "$@"; do
+    cmd="$cmd $(printf '%q' "$arg")"
+done
+
+# -u TMUX: never nest, even when the caller is itself running under tmux.
+# new-session -A: attach to the session if it already exists, else create it.
+exec env -u TMUX tmux -L "$socket" -f "$conf" \
+     new-session -A -s "$session" -c "$PWD" "$cmd"
