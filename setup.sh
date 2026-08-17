@@ -269,3 +269,15 @@ cp  Makevars "${HOME}/.R/Makevars"
 mkdir -p "${HOME}/.ccache"
 
 cp ccache "${HOME}/.ccache/ccache.conf"
+
+# Claude Code runs under its own tmux server; see README.md
+
+mkdir -p "${HOME}/.local/bin"
+
+cp claude-tmux claude-wt "${HOME}/.local/bin/"
+
+chmod +x "${HOME}/.local/bin/claude-tmux" "${HOME}/.local/bin/claude-wt"
+
+mkdir -p "${HOME}/.config"
+
+cp claude-tmux.conf "${HOME}/.config/claude-tmux.conf"

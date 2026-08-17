@@ -31,6 +31,18 @@ session=${session//:/-}
 # Quote everything into a single shell-command argument so switches such as
 # --continue are never mistaken for tmux's own options.
 cmd=$(printf '%q' "${CLAUDE_TMUX_PROGRAM:-claude}")
+
+# Match claude's colours to the theme of whatever started it: emacs-config.el
+# exports CLAUDE_TMUX_THEME=dark or light from the frame's background mode, so
+# a solarized-dark Emacs gets a dark claude and a solarized-light one a light
+# claude.  Only new sessions take it -- an existing one keeps the theme it was
+# started with until you say /theme inside it.
+case ${CLAUDE_TMUX_THEME:-} in
+    dark|light)
+        cmd="$cmd --settings $(printf '%q' "{\"theme\":\"$CLAUDE_TMUX_THEME\"}")"
+        ;;
+esac
+
 for arg in "$@"; do
     cmd="$cmd $(printf '%q' "$arg")"
 done

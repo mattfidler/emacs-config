@@ -1321,6 +1321,200 @@
 ;; here; `ergoemacs-term.el' in ergoemacs-mode now handles every terminal
 ;; emulator, so there is nothing left to do but load eat.
 
+;;; Copying out of a terminal.
+;;
+;; A program copies by sending OSC 52, naming the selection it means.  tmux
+;; names none -- it sends "\e]52;;<data>" -- and eat reads a missing name as
+;; xterm's "s0", the select target, which it puts in the kill ring and nowhere
+;; else.  So a copy inside claude could not be pasted into anything but Emacs.
+;; Read an unnamed selection as the clipboard, which is what every program
+;; that sends one means by it.
+
+(defun eat-osc52-select-means-clipboard (fn terminal selection data)
+  "Around FN, call `eat--manipulate-kill-ring' with the clipboard.
+SELECTION is remapped to `:clipboard' when it is the unnamed `:select'
+target; TERMINAL and DATA are passed through untouched."
+  (funcall fn terminal (if (eq selection :select) :clipboard selection) data))
+
+(with-eval-after-load 'eat
+  (advice-add 'eat--manipulate-kill-ring :around
+              #'eat-osc52-select-means-clipboard))
+
+;;; Zooming a terminal, and keeping it wide enough to read code in.
+;;
+;; C-<wheel-up> and C-<wheel-down> run `mouse-wheel-text-scale' everywhere else,
+;; but two things stop them in a terminal.  A program that asks for mouse
+;; reporting -- claude does -- makes eat turn on `eat--mouse-modifier-click-mode',
+;; whose keymap grabs every modified mouse event and forwards it to the program,
+;; and being a minor mode keymap it shadows both the global binding and
+;; `eat-mode-map'.  Then, even once the text does scale, nothing tells the
+;; program about it: Emacs only resizes a process's pty from
+;; `window-configuration-change-hook', and a change of text size is not a
+;; configuration change, so claude would keep drawing at the old row and column
+;; count.  Fix both, and then use them to fix a third annoyance -- code
+;; snippets, diffs and tables arriving wrapped because the terminal is too
+;; narrow -- by shrinking the text on its own until enough columns fit.
+
+(require 'face-remap)
+
+(defcustom my-eat-min-columns 100
+  "Columns `my-eat-fit-columns-mode' tries to keep available in a terminal.
+Claude wraps everything it prints to the width of its terminal, so a
+window narrower than this mangles code snippets and diffs."
+  :type 'natnum
+  :group 'eat)
+
+(defcustom my-eat-min-text-scale -4
+  "How far `my-eat-fit-columns-mode' may shrink the text.
+It gives up here even when `my-eat-min-columns' still does not fit,
+rather than scaling down to something unreadable."
+  :type 'integer
+  :group 'eat)
+
+(defvar-local my-eat-text-scale-preferred 0
+  "Text scale this terminal uses when its window is wide enough.
+Zooming by hand sets it, and `my-eat-fit-columns-mode' never zooms past
+it: the mode only shrinks the text below this, and only for as long as
+the window is too narrow.")
+
+(defvar my-eat--inhibit-resize nil
+  "Non-nil while trying text scales out, so the terminal is resized once.")
+
+(defvar my-eat--fitting nil
+  "Non-nil while `my-eat-fit-columns' runs, to keep it out of its own hooks.")
+
+(defun my-eat-sync-terminal-size ()
+  "Tell the program in this terminal how big its window is now."
+  (when (and (derived-mode-p 'eat-mode)
+             (bound-and-true-p eat-terminal)
+             (not my-eat--inhibit-resize))
+    (window--adjust-process-windows)))
+
+(defun my-eat--text-scale-step (step)
+  "Change the text scale by STEP.
+Return nil instead of signalling when the font cannot go that small or
+that large, so a loop stepping through sizes just stops there."
+  (condition-case nil
+      (progn (text-scale-increase step) t)
+    (user-error nil)))
+
+(defun my-eat-fit-columns (&optional window)
+  "Shrink the text in WINDOW until `my-eat-min-columns' columns fit.
+Grow it back, up to `my-eat-text-scale-preferred', once the window is
+wide enough to afford it."
+  (interactive)
+  (let ((window (or window (selected-window))))
+    ;; A text terminal has one font in one size; there is nothing to trade.
+    (when (display-graphic-p (window-frame window))
+      (let ((my-eat--inhibit-resize t))
+        (with-selected-window window
+          ;; Never end up more zoomed in than asked for.
+          (when (> text-scale-mode-amount my-eat-text-scale-preferred)
+            (text-scale-set my-eat-text-scale-preferred))
+          (while (and (< (window-max-chars-per-line window) my-eat-min-columns)
+                      (> text-scale-mode-amount my-eat-min-text-scale)
+                      (my-eat--text-scale-step -1)))
+          ;; Take back each step that still leaves room for the target width.
+          (while (and (< text-scale-mode-amount my-eat-text-scale-preferred)
+                      (let ((amount text-scale-mode-amount))
+                        (and (my-eat--text-scale-step 1)
+                             (or (>= (window-max-chars-per-line window)
+                                     my-eat-min-columns)
+                                 (progn (text-scale-set amount) nil))))))))
+      (with-selected-window window
+        (my-eat-sync-terminal-size)))))
+
+(defun my-eat-fit-columns--window-change ()
+  "Refit this terminal after the window showing it changed."
+  (unless my-eat--fitting
+    (when-let* ((window (if (eq (window-buffer) (current-buffer))
+                            (selected-window)
+                          (get-buffer-window nil t))))
+      (let ((my-eat--fitting t))
+        (my-eat-fit-columns window)))))
+
+(define-minor-mode my-eat-fit-columns-mode
+  "Keep at least `my-eat-min-columns' columns available in this terminal.
+While the window is too narrow the text shrinks until that many columns
+fit, so a code snippet claude prints arrives unwrapped; when the window
+grows again the text grows back to `my-eat-text-scale-preferred'."
+  :lighter " fit"
+  (if my-eat-fit-columns-mode
+      (progn
+        (add-hook 'window-configuration-change-hook
+                  #'my-eat-fit-columns--window-change nil t)
+        (my-eat-fit-columns--window-change))
+    (remove-hook 'window-configuration-change-hook
+                 #'my-eat-fit-columns--window-change t)
+    (text-scale-set my-eat-text-scale-preferred)
+    (my-eat-sync-terminal-size)))
+
+(defun my-eat--text-scale (step event)
+  "Set the text scale of the terminal EVENT happened in.
+STEP is added to the current scale, or nil to go back to the default
+size.  The scale reached this way becomes the one
+`my-eat-fit-columns-mode' returns to."
+  (let ((window (or (and (consp event)
+                         (let ((w (posn-window (event-start event))))
+                           (and (window-live-p w) w)))
+                    (selected-window))))
+    (with-selected-window window
+      (text-scale-set (if step (+ text-scale-mode-amount step) 0))
+      (setq my-eat-text-scale-preferred text-scale-mode-amount)
+      (let ((gave-up (and my-eat-fit-columns-mode
+                          (< (window-max-chars-per-line window)
+                             my-eat-min-columns))))
+        (cond
+         ;; Text this big leaves fewer columns than the mode insists on, and
+         ;; the request was explicit, so stop fitting rather than undo it.
+         (gave-up (my-eat-fit-columns-mode -1))
+         (my-eat-fit-columns-mode (my-eat-fit-columns window))
+         (t (my-eat-sync-terminal-size)))
+        (message "Text scale %+d, %d columns%s"
+                 text-scale-mode-amount (window-max-chars-per-line window)
+                 (if gave-up ", fitting off (C-c f)" ""))))))
+
+(defun my-eat-text-scale-increase (&optional event)
+  "Make the text in this terminal bigger and resize the terminal to match.
+With a mouse EVENT, act on the terminal under the pointer."
+  (interactive (list last-input-event))
+  (my-eat--text-scale 1 event))
+
+(defun my-eat-text-scale-decrease (&optional event)
+  "Make the text in this terminal smaller and resize the terminal to match.
+With a mouse EVENT, act on the terminal under the pointer."
+  (interactive (list last-input-event))
+  (my-eat--text-scale -1 event))
+
+(defun my-eat-text-scale-reset (&optional event)
+  "Undo any zooming in this terminal.
+With a mouse EVENT, act on the terminal under the pointer."
+  (interactive (list last-input-event))
+  (my-eat--text-scale nil event))
+
+(defun my-eat--setup-text-scale ()
+  "Resize this terminal whenever its text is scaled by any means."
+  (add-hook 'text-scale-mode-hook #'my-eat-sync-terminal-size nil t))
+
+(with-eval-after-load 'eat
+  (add-hook 'eat-mode-hook #'my-eat--setup-text-scale)
+  ;; The mouse map has to be bound too, not just `eat-mode-map': it is the one
+  ;; that steals C-<wheel-...> while the program is reading the mouse.
+  (dolist (map (list eat-mode-map eat--mouse-modifier-click-mode-map))
+    (define-key map [C-wheel-up] #'my-eat-text-scale-increase)
+    (define-key map [C-wheel-down] #'my-eat-text-scale-decrease)
+    ;; On a text terminal (`xterm-mouse-mode') the wheel arrives as buttons 4
+    ;; and 5 instead.
+    (define-key map [C-mouse-4] #'my-eat-text-scale-increase)
+    (define-key map [C-mouse-5] #'my-eat-text-scale-decrease))
+  ;; C-+ and friends belong to the program in semi-char mode, but C-c is eat's
+  ;; own prefix and falls through to `eat-mode-map' for keys eat does not use.
+  (define-key eat-mode-map [?\C-c ?+] #'my-eat-text-scale-increase)
+  (define-key eat-mode-map [?\C-c ?=] #'my-eat-text-scale-increase)
+  (define-key eat-mode-map [?\C-c ?-] #'my-eat-text-scale-decrease)
+  (define-key eat-mode-map [?\C-c ?0] #'my-eat-text-scale-reset)
+  (define-key eat-mode-map [?\C-c ?f] #'my-eat-fit-columns-mode))
+
 (use-package monet
   :vc (:url "https://github.com/stevemolitor/monet" :rev :newest))
 
@@ -1334,12 +1528,30 @@
       (unless (member bin (split-string path path-separator t))
         (setenv "PATH" (concat bin path-separator path))))))
 
+(defun claude-code-theme-environment (&rest _)
+  "Tell `claude-tmux' whether this Emacs is a light or a dark one.
+It turns CLAUDE_TMUX_THEME into claude's own --settings theme, so a
+solarized-dark Emacs gets a dark claude and a solarized-light one a light
+claude instead of whatever theme was picked last."
+  (list (format "CLAUDE_TMUX_THEME=%s"
+                (if (eq (frame-parameter nil 'background-mode) 'dark)
+                    "dark"
+                  "light"))))
+
 (use-package claude-code :ensure t
   :vc (:url "https://github.com/stevemolitor/claude-code.el" :rev :newest)
   :config
   ;; optional IDE integration with Monet
   (add-hook 'claude-code-process-environment-functions #'monet-start-server-function)
   (monet-mode 1)
+
+  (add-hook 'claude-code-process-environment-functions
+            #'claude-code-theme-environment)
+
+  ;; Claude wraps code snippets to the width of its terminal, so shrink the text
+  ;; rather than let a narrow window wrap them.  C-<wheel> still overrides this;
+  ;; the size it is left at becomes the one claude buffers zoom back to.
+  (add-hook 'claude-code-start-hook #'my-eat-fit-columns-mode)
 
   ;; Run claude inside its own detachable tmux session (~/.local/bin/claude-tmux)
   ;; so a conversation outlives both a dropped ssh connection and an Emacs
