@@ -158,32 +158,70 @@ tmux -L claude kill-session -t NAME
 and start the agent again -- or, from Emacs, `M-x claude-tmux-kill` and
 `M-x antigravity-tmux-kill`.
 
+### One key: `<apps> k h`
+
+`claude-dwim` is the whole of it from the keyboard, and what it does depends on
+where it is called from:
+
+| where you are | what it does |
+| --- | --- |
+| in an agent terminal | `ai-tmux-list` -- every *other* conversation |
+| in magit, on the trunk | cuts a worktree and starts Claude in it |
+| anywhere a conversation for this directory exists | goes back to it |
+| anywhere else | cuts a worktree, so the agent never churns the checkout you are reading |
+
+The trunk is whatever `origin/HEAD` points at, or `main` or `master` where the
+clone never set it.  Being *in magit on the trunk* is read as the start of a new
+task, so it cuts a worktree even when the trunk already has an agent of its own;
+elsewhere on the trunk it will still cut one, but only because there is nothing
+here to go back to.
+
+"A conversation for this directory" is a buffer in this Emacs when there is one,
+and failing that a tmux session started here by an Emacs that has since gone --
+`claude-tmux` re-attaches rather than starting a second claude, so the way back
+after a restart is the same key.
+
+`agy-dwim` is the same thing for Antigravity.  `claude-dwim` is on `<apps> k h`
+in `transient-apps` and `agy-dwim` on `<apps> k H`.
+
+### The session list
+
+`C-c a i` (`ai-tmux-list`) is to conversations what `ibuffer` is to buffers: a
+`tabulated-list-mode` buffer of every session on every agent's tmux server, most
+recently used first -- including ones started from another Emacs, another
+machine's ssh connection, or a plain terminal -- with the directory it was
+started in and whether something is already viewing it.
+
+| key | |
+| --- | --- |
+| `RET`, `o` | show this session in this Emacs, starting a client if there is none |
+| `d`, `u`, `U`, `x` | mark for ending, unmark, unmark all, end the marked ones |
+| `k` | end this one |
+| `g` | re-read the list from tmux |
+| `q` | bury it |
+
+`C-c a j` (`ai-tmux-switch`) is the same set of sessions from the minibuffer for
+when the name is already known; candidates there are named `agent/session`, since
+two agents working in the same directory derive the same session name.
+
 ### Commands
 
-`C-c a i` is the one to remember.  What `imenu` is to the places in a buffer,
-`ai-tmux-imenu` is to the conversations running on this machine: every session on
-every agent's tmux server in a single list, most recently used first -- including
-ones started from another Emacs, another machine's ssh connection, or a plain
-terminal -- annotated with the directory it was started in and whether something
-is already viewing it.  Picking one shows it in this Emacs, starting a client for
-it if this Emacs has none.  Candidates are named `agent/session`, since two
-agents working in the same directory derive the same session name.
-
-The rest are per-agent.  Claude keeps claude-code.el's own map on `C-c c`;
-Antigravity has no package and so no map, and borrows `C-c a`:
+Claude keeps claude-code.el's own map on `C-c c`; Antigravity has no package and
+so no map, and borrows `C-c a`:
 
 | | Claude | Antigravity |
 | --- | --- | --- |
-| jump to any agent's session | `C-c a i` | `C-c a i` |
+| the right thing for where you are | `C-c a d`, `<apps> k h` | `C-c a D`, `<apps> k H` |
+| the list of every session | `C-c a i` | `C-c a i` |
 | start, or return to this project's agent | `C-c a c` | `C-c a a` |
 | switch between this Emacs's agent buffers | `C-c c b` | `C-c a b` |
 | attach to a background tmux session | `M-x claude-tmux-switch` | `C-c a s` |
 | end a background tmux session | `M-x claude-tmux-kill` | `C-c a k` |
 | start on a fresh git worktree | `M-x claude-wt` | `C-c a w` |
 
-`ai-tmux-agents` is the list `ai-tmux-imenu` walks: each entry pairs an agent's
-tmux server with the function that shows one of its sessions, so a third agent is
-one line there and a `--attach` function of its own.
+`ai-tmux-agents` is the list all of this walks: each entry pairs an agent's tmux
+server with the function that shows one of its sessions, so a third agent is one
+line there and a `--attach` function of its own.
 
 Everything that is not particular to one agent is shared in `emacs-config.el`:
 `ai-term--directory` (which directory a buffer belongs to), `ai-term--theme`,

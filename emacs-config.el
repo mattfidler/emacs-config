@@ -406,6 +406,9 @@
      ("e" "mc/edit-lline" mc/edit-lines)
      ("a" "avy goto word" avy-goto-word-or-subword-1)
      ("l" "avy goto line" avy-goto-line)
+     ;; <apps> k h: the agent for wherever point is -- see `claude-dwim'.
+     ("h" "claude" claude-dwim)
+     ("H" "antigravity" agy-dwim)
      ])
   ;;(define-key ergoemacs-override-keymap (kbd "<menu> k") nil)
   ;;(define-key ergoemacs-override-keymap (kbd "<apps> k") nil)
@@ -1631,8 +1634,8 @@ belongs to without having to load claude-code.el to ask."
 
 Each element is (SOCKET . ATTACH), where SOCKET names the tmux server --
 `tmux -L claude', `tmux -L antigravity' -- and ATTACH is the function
-`ai-tmux-imenu' calls with that agent's (NAME DIRECTORY ATTACHED) to show
-the session in this Emacs.")
+`ai-tmux--attach' calls with that agent's (NAME DIRECTORY ATTACHED) to
+show the session in this Emacs.")
 
 (defun ai-tmux--server-sessions (socket)
   "Return the sessions on tmux server SOCKET, in no particular order.
@@ -1710,55 +1713,196 @@ running so it can be re-attached.  This actually stops it."
     (call-process "tmux" nil nil nil "-L" socket "kill-session" "-t" name)
     (message "Ended %s session %s" socket name)))
 
-(defun ai-tmux--read-any-session (prompt)
-  "Read one of every agent's background sessions with PROMPT.
+(defun ai-tmux--attach (session)
+  "Show the agent SESSION, (AGENT NAME DIRECTORY ATTACHED), in this Emacs.
 
-Returns the (AGENT NAME DIRECTORY ATTACHED) entry.  Candidates are named
-agent/session, since two agents working in the same directory derive the
-same session name, and are annotated with the directory the session was
-started in and whether something is already viewing it."
-  (let* ((sessions (or (ai-tmux--all-sessions)
-                       (user-error "No background agent sessions")))
-         (candidates (mapcar (lambda (session)
-                               (cons (format "%s/%s" (nth 0 session) (nth 1 session))
-                                     session))
-                             sessions))
-         (width (apply #'max (mapcar (lambda (c) (length (car c))) candidates)))
-         (table
-          (lambda (string pred action)
-            (if (eq action 'metadata)
-                `(metadata
-                  (category . ai-tmux-session)
-                  ;; keep `ai-tmux--all-sessions' most-recent-first order
-                  (display-sort-function . identity)
-                  (cycle-sort-function . identity)
-                  (annotation-function
-                   . ,(lambda (cand)
-                        (let ((session (cdr (assoc cand candidates))))
-                          (concat (make-string (1+ (- width (length cand))) ?\s)
-                                  (propertize (or (nth 2 session) "")
-                                              'face 'completions-annotations)
-                                  (and (nth 3 session) "  [attached]"))))))
-              (complete-with-action action candidates string pred)))))
-    (cdr (assoc (completing-read prompt table nil t) candidates))))
-
-(defun ai-tmux-imenu (session)
-  "Jump to any agent's background tmux SESSION, from one list of all of them.
-
-What `imenu' is to the places in a buffer, this is to the conversations
-running on this machine: every session on every agent's tmux server in a
-single list, most recently used first -- including ones started from
-another Emacs, another machine's ssh connection, or a plain terminal --
-and picking one shows it in this Emacs, starting a client for it when
-this Emacs has none.
-
-`claude-tmux-switch' and `antigravity-tmux-switch' are the same thing for
-one agent at a time."
-  (interactive (list (ai-tmux--read-any-session "Agent session: ")))
+Hands it to the attach function `ai-tmux-agents' names for that agent,
+which starts a client for the session when this Emacs has none."
   (pcase-let* ((`(,agent ,name ,dir ,attached) session)
                (attach (cdr (assoc agent ai-tmux-agents))))
     (unless attach (user-error "No way to attach to a %s session" agent))
     (funcall attach (list name dir attached))))
+
+(defun ai-tmux--session-for-directory (socket directory)
+  "The session on SOCKET that was started in DIRECTORY, if there is one.
+
+This is how a conversation is found again after the Emacs showing it has
+gone: the buffer is not there any more, but the session is."
+  (let ((dir (file-truename (file-name-as-directory directory))))
+    (seq-find (lambda (session)
+                (let ((sdir (nth 1 session)))
+                  (and sdir (file-directory-p sdir)
+                       (equal (file-truename (file-name-as-directory sdir)) dir))))
+              (ai-tmux--sessions socket))))
+
+;;;; The list of sessions
+;;
+;; What ibuffer is to buffers: every conversation on the machine in one
+;; tabulated list, whichever agent left it and whichever Emacs -- or ssh
+;; connection, or plain terminal -- it was started from.
+
+(defvar ai-tmux-list-buffer-name "*AI sessions*"
+  "Name of the buffer `ai-tmux-list' shows the sessions in.")
+
+(defvar ai-tmux-list-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'ai-tmux-list-attach)
+    (define-key map "o" #'ai-tmux-list-attach)
+    (define-key map "d" #'ai-tmux-list-mark-kill)
+    (define-key map "u" #'ai-tmux-list-unmark)
+    (define-key map "U" #'ai-tmux-list-unmark-all)
+    (define-key map "x" #'ai-tmux-list-execute)
+    (define-key map "k" #'ai-tmux-list-kill)
+    map)
+  "Keymap for `ai-tmux-list-mode'.
+
+`g' and `q' come from `special-mode': the list is re-read from tmux
+rather than cached, so reverting it shows what is running now.")
+
+(defun ai-tmux-list--entries ()
+  "Rows for `tabulated-list-entries', most recently used session first."
+  (mapcar (lambda (session)
+            (pcase-let ((`(,agent ,name ,dir ,attached) session))
+              (list session
+                    (vector agent
+                            name
+                            (if attached "attached" "")
+                            (if dir (abbreviate-file-name dir) "")))))
+          (ai-tmux--all-sessions)))
+
+(defun ai-tmux-list--refresh ()
+  "Re-read the sessions from every agent's tmux server."
+  (setq tabulated-list-entries (ai-tmux-list--entries)))
+
+(define-derived-mode ai-tmux-list-mode tabulated-list-mode "AI sessions"
+  "Major mode for the list of background agent sessions.
+
+\\{ai-tmux-list-mode-map}"
+  (setq tabulated-list-format
+        [("Agent" 12 t) ("Session" 38 t) ("" 9 t) ("Directory" 0 t)])
+  ;; Leave the sort key unset: `ai-tmux--all-sessions' hands them over most
+  ;; recently used first, which is the order worth having by default.  The
+  ;; column headers still sort when clicked.
+  (setq tabulated-list-padding 2)
+  (add-hook 'tabulated-list-revert-hook #'ai-tmux-list--refresh nil t)
+  (tabulated-list-init-header))
+
+(defun ai-tmux-list--session ()
+  "The session on this line, or an error when there is none."
+  (or (tabulated-list-get-id) (user-error "No session on this line")))
+
+(defun ai-tmux-list-attach ()
+  "Show the session on this line in this Emacs."
+  (interactive)
+  (ai-tmux--attach (ai-tmux-list--session)))
+
+(defun ai-tmux-list-mark-kill ()
+  "Mark the session on this line to be ended by \\[ai-tmux-list-execute]."
+  (interactive)
+  (ai-tmux-list--session)
+  (tabulated-list-put-tag "D" t))
+
+(defun ai-tmux-list-unmark ()
+  "Remove the mark from the session on this line."
+  (interactive)
+  (tabulated-list-put-tag " " t))
+
+(defun ai-tmux-list-unmark-all ()
+  "Remove every mark in the list."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (while (not (eobp))
+      (tabulated-list-put-tag " " t))))
+
+(defun ai-tmux-list--marked ()
+  "Every session marked for killing, in the order they appear."
+  (let (marked)
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (when (eq (char-after) ?D)
+          (when-let* ((session (tabulated-list-get-id)))
+            (push session marked)))
+        (forward-line 1)))
+    (nreverse marked)))
+
+(defun ai-tmux-list-kill ()
+  "End the session on this line.
+
+Killing an agent's buffer only detaches from tmux; this stops the agent."
+  (interactive)
+  (pcase-let ((`(,agent ,name ,_dir ,_attached) (ai-tmux-list--session)))
+    (when (yes-or-no-p (format "End %s session %s? " agent name))
+      (ai-tmux--kill agent name)
+      (revert-buffer))))
+
+(defun ai-tmux-list-execute ()
+  "End every session marked with \\[ai-tmux-list-mark-kill]."
+  (interactive)
+  (let ((marked (or (ai-tmux-list--marked) (user-error "Nothing marked"))))
+    (when (yes-or-no-p (format "End %d marked session%s? " (length marked)
+                               (if (cdr marked) "s" "")))
+      (dolist (session marked)
+        (ai-tmux--kill (nth 0 session) (nth 1 session)))
+      (revert-buffer))))
+
+;;;###autoload
+(defun ai-tmux-list ()
+  "List every agent's background tmux sessions, the way ibuffer lists buffers.
+
+Every session on every agent's tmux server, most recently used first --
+including ones started from another Emacs, another machine's ssh
+connection, or a plain terminal -- with the directory it was started in
+and whether something is already viewing it.
+
+\\<ai-tmux-list-mode-map>\\[ai-tmux-list-attach] shows the one at point in
+this Emacs, \\[ai-tmux-list-kill] ends it, \\[ai-tmux-list-mark-kill] and
+\\[ai-tmux-list-execute] end several, and \\[revert-buffer] re-reads the
+list from tmux."
+  (interactive)
+  (let ((buffer (get-buffer-create ai-tmux-list-buffer-name)))
+    (with-current-buffer buffer
+      (ai-tmux-list-mode)
+      (ai-tmux-list--refresh)
+      (tabulated-list-print))
+    (pop-to-buffer buffer)))
+
+(defun ai-tmux-switch (session)
+  "Jump to any agent's background tmux SESSION, from the minibuffer.
+
+`ai-tmux-list' is the same set of sessions as a buffer to look through;
+this is the one-line version for when the name is already known.
+Candidates are named agent/session, since two agents working in the same
+directory derive the same session name."
+  (interactive
+   (list
+    (let* ((sessions (or (ai-tmux--all-sessions)
+                         (user-error "No background agent sessions")))
+           (candidates (mapcar (lambda (session)
+                                 (cons (format "%s/%s" (nth 0 session) (nth 1 session))
+                                       session))
+                               sessions))
+           (width (apply #'max (mapcar (lambda (c) (length (car c))) candidates)))
+           (table
+            (lambda (string pred action)
+              (if (eq action 'metadata)
+                  `(metadata
+                    (category . ai-tmux-session)
+                    ;; keep `ai-tmux--all-sessions' most-recent-first order
+                    (display-sort-function . identity)
+                    (cycle-sort-function . identity)
+                    (annotation-function
+                     . ,(lambda (cand)
+                          (let ((session (cdr (assoc cand candidates))))
+                            (concat (make-string (1+ (- width (length cand))) ?\s)
+                                    (propertize (or (nth 2 session) "")
+                                                'face 'completions-annotations)
+                                    (and (nth 3 session) "  [attached]"))))))
+                (complete-with-action action candidates string pred))))
+           (choice (completing-read "Agent session: " table nil t)))
+      (cdr (assoc choice candidates)))))
+  (ai-tmux--attach session))
 
 (defun ai-wt--git (dir &rest args)
   "Run git with ARGS in DIR and return its output, trimmed.
@@ -1776,6 +1920,29 @@ Signal an error carrying git's own message when the command fails."
   (let ((default-directory (file-name-as-directory dir)))
     (eq 0 (call-process "git" nil nil nil "show-ref" "--verify" "--quiet"
                         (concat "refs/heads/" branch)))))
+
+(defun ai-wt--trunk (dir)
+  "The name of the trunk branch of the repository at DIR, or nil.
+
+Whatever origin's HEAD points at -- main here, master elsewhere -- and
+failing that whichever of the two the repository actually has, since
+origin/HEAD is only set when the clone bothered to ask for it."
+  (or (let ((ref (ignore-errors
+                   (ai-wt--git dir "symbolic-ref" "--quiet" "--short"
+                               "refs/remotes/origin/HEAD"))))
+        (and ref (string-prefix-p "origin/" ref)
+             (substring ref (length "origin/"))))
+      (seq-find (lambda (branch) (ai-wt--branch-p dir branch))
+                '("main" "master"))))
+
+(defun ai-wt--on-trunk-p (dir)
+  "Return non-nil when DIR is a checkout sitting on its repository's trunk.
+
+That is: the branch new work is cut from, rather than a topic branch or a
+worktree already cut for something."
+  (let ((branch (ignore-errors
+                  (ai-wt--git dir "symbolic-ref" "--quiet" "--short" "HEAD"))))
+    (and branch (equal branch (ai-wt--trunk dir)))))
 
 (defun ai-wt--worktree (name)
   "Return a git worktree of this repository called NAME, making it if needed.
@@ -2087,10 +2254,92 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   (interactive (list (read-string "Worktree/branch name: ")))
   (pop-to-buffer (antigravity--start (ai-wt--worktree name))))
 
+;;;; One key for all of it
+;;
+;; The three things worth doing with an agent depend entirely on where you are
+;; standing when you ask, so ask for all three with one key.
+
+(defun ai-dwim (rejoin worktree)
+  "The body of `claude-dwim' and `agy-dwim'.
+
+REJOIN is called with no arguments to show the conversation belonging to
+this directory, and returns nil when there is none to show.  WORKTREE is
+called with no arguments to cut a fresh worktree and start an agent in it.
+
+Which of them runs depends on where it was called from:
+
+  in an agent terminal   every other conversation, in `ai-tmux-list'
+  in magit, on the trunk a worktree, because this is where work starts
+  anywhere with a session that conversation
+  anywhere else          a worktree, so the agent never churns a checkout
+                         you are reading"
+  (cond
+   ;; Already looking at one conversation: the useful thing from here is all
+   ;; the others.
+   ((derived-mode-p 'eat-mode 'vterm-mode) (ai-tmux-list))
+   ;; Magit on the trunk is where a new task starts, and a new task gets a
+   ;; worktree even when the trunk already has an agent of its own.
+   ((and (derived-mode-p 'magit-mode)
+         (ai-wt--on-trunk-p (ai-term--directory)))
+    (funcall worktree))
+   ;; A conversation for this directory, running here or left running
+   ;; somewhere else.
+   ((funcall rejoin))
+   (t (funcall worktree))))
+
+(defun claude-dwim--rejoin ()
+  "Show this directory's Claude conversation, or return nil for none.
+
+A buffer in this Emacs when there is one; failing that a tmux session
+started here by an Emacs that has since gone, which claude-tmux
+re-attaches to rather than starting a second claude."
+  (require 'claude-code)
+  (let* ((dir (claude-code--directory))
+         (buffers (and dir (claude-code--find-claude-buffers-for-directory dir))))
+    (cond
+     ((= 1 (length buffers)) (pop-to-buffer (car buffers)) t)
+     (buffers (call-interactively #'claude-code-select-buffer) t)
+     ((and dir (ai-tmux--session-for-directory "claude" dir))
+      (claude-code--start-in dir) t))))
+
+(defun claude-dwim ()
+  "Do the useful thing with Claude for wherever this was called from.
+
+In an agent terminal, list every conversation on the machine.  In magit
+on the trunk, cut a worktree and start Claude in it.  Anywhere else, go
+back to this directory's conversation, and cut a worktree for one when
+there is none -- so Claude works on a checkout of its own rather than the
+one being read.  See `ai-dwim'."
+  (interactive)
+  (ai-dwim #'claude-dwim--rejoin
+           (lambda () (call-interactively #'claude-wt))))
+
+(defun agy-dwim--rejoin ()
+  "Show this directory's Antigravity conversation, or return nil for none."
+  (let* ((dir (ai-term--directory))
+         (buffers (and dir (antigravity--buffers-for-directory dir))))
+    (cond
+     (buffers (pop-to-buffer (antigravity--read-buffer "Antigravity buffer: "
+                                                       buffers))
+              t)
+     ((and dir (ai-tmux--session-for-directory "antigravity" dir))
+      (pop-to-buffer (antigravity--start dir)) t))))
+
+(defun agy-dwim ()
+  "Do the useful thing with Antigravity for wherever this was called from.
+
+`claude-dwim' for the other agent; see `ai-dwim' for what it decides."
+  (interactive)
+  (ai-dwim #'agy-dwim--rejoin
+           (lambda () (call-interactively #'antigravity-wt))))
+
 (defvar ai-command-map
   (let ((map (make-sparse-keymap)))
     ;; Across every agent.
-    (define-key map "i" #'ai-tmux-imenu)
+    (define-key map "i" #'ai-tmux-list)
+    (define-key map "j" #'ai-tmux-switch)
+    (define-key map "d" #'claude-dwim)
+    (define-key map "D" #'agy-dwim)
     ;; Claude keeps claude-code.el's own map on C-c c; this is only the way in.
     (define-key map "c" #'claude)
     ;; Antigravity, which has no map of its own.
