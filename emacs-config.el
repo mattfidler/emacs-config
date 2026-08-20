@@ -1624,27 +1624,57 @@ belongs to without having to load claude-code.el to ask."
   "Whether this Emacs is a light or a dark one, as an agent theme name."
   (if (eq (frame-parameter nil 'background-mode) 'dark) "dark" "light"))
 
+(defvar ai-tmux-agents
+  '(("claude" . claude-tmux--attach)
+    ("antigravity" . antigravity-tmux--attach))
+  "The agents that keep their sessions on a tmux server of their own.
+
+Each element is (SOCKET . ATTACH), where SOCKET names the tmux server --
+`tmux -L claude', `tmux -L antigravity' -- and ATTACH is the function
+`ai-tmux-imenu' calls with that agent's (NAME DIRECTORY ATTACHED) to show
+the session in this Emacs.")
+
+(defun ai-tmux--server-sessions (socket)
+  "Return the sessions on tmux server SOCKET, in no particular order.
+
+Each element is (ACTIVITY NAME DIRECTORY ATTACHED): ACTIVITY is the time
+the session was last used, and ATTACHED says whether some client -- an
+Emacs buffer or a terminal -- is currently viewing it."
+  (mapcar (lambda (line)
+            (pcase-let ((`(,name ,dir ,attached ,activity) (split-string line "\t")))
+              (list (string-to-number (or activity "0"))
+                    name dir (not (equal attached "0")))))
+          (split-string
+           (shell-command-to-string
+            (concat "tmux -L " (shell-quote-argument socket) " ls -F "
+                    "'#{session_name}\t#{session_path}\t"
+                    "#{session_attached}\t#{session_activity}' 2>/dev/null"))
+           "\n" t)))
+
 (defun ai-tmux--sessions (socket)
   "Return the background agent sessions on SOCKET, most recently used first.
 
 SOCKET is the tmux server an agent keeps its sessions on: \"claude\" for
 Claude, \"antigravity\" for Antigravity.  Each element is (NAME DIRECTORY
-ATTACHED), where ATTACHED says whether some client -- an Emacs buffer or a
-terminal -- is currently viewing it."
-  (mapcar
-   #'cdr
-   (sort
-    (mapcar (lambda (line)
-              (pcase-let ((`(,name ,dir ,attached ,activity) (split-string line "\t")))
-                (list (string-to-number (or activity "0"))
-                      name dir (not (equal attached "0")))))
-            (split-string
-             (shell-command-to-string
-              (concat "tmux -L " (shell-quote-argument socket) " ls -F "
-                      "'#{session_name}\t#{session_path}\t"
-                      "#{session_attached}\t#{session_activity}' 2>/dev/null"))
-             "\n" t))
-    (lambda (a b) (> (car a) (car b))))))
+ATTACHED)."
+  (mapcar #'cdr (sort (ai-tmux--server-sessions socket)
+                      (lambda (a b) (> (car a) (car b))))))
+
+(defun ai-tmux--all-sessions ()
+  "Return every agent's background sessions, most recently used first.
+
+Each element is (AGENT NAME DIRECTORY ATTACHED), with AGENT the tmux
+server the session lives on -- one list across every agent in
+`ai-tmux-agents', so a session can be picked without first having to
+remember which agent left it."
+  (mapcar #'cdr
+          (sort (mapcan (lambda (agent)
+                          (mapcar (lambda (session)
+                                    (cons (car session)
+                                          (cons (car agent) (cdr session))))
+                                  (ai-tmux--server-sessions (car agent))))
+                        ai-tmux-agents)
+                (lambda (a b) (> (car a) (car b))))))
 
 (defun ai-tmux--read-session (socket prompt)
   "Read a background agent session on SOCKET with PROMPT.
@@ -1679,6 +1709,56 @@ running so it can be re-attached.  This actually stops it."
   (let ((name (if (consp session) (car session) session)))
     (call-process "tmux" nil nil nil "-L" socket "kill-session" "-t" name)
     (message "Ended %s session %s" socket name)))
+
+(defun ai-tmux--read-any-session (prompt)
+  "Read one of every agent's background sessions with PROMPT.
+
+Returns the (AGENT NAME DIRECTORY ATTACHED) entry.  Candidates are named
+agent/session, since two agents working in the same directory derive the
+same session name, and are annotated with the directory the session was
+started in and whether something is already viewing it."
+  (let* ((sessions (or (ai-tmux--all-sessions)
+                       (user-error "No background agent sessions")))
+         (candidates (mapcar (lambda (session)
+                               (cons (format "%s/%s" (nth 0 session) (nth 1 session))
+                                     session))
+                             sessions))
+         (width (apply #'max (mapcar (lambda (c) (length (car c))) candidates)))
+         (table
+          (lambda (string pred action)
+            (if (eq action 'metadata)
+                `(metadata
+                  (category . ai-tmux-session)
+                  ;; keep `ai-tmux--all-sessions' most-recent-first order
+                  (display-sort-function . identity)
+                  (cycle-sort-function . identity)
+                  (annotation-function
+                   . ,(lambda (cand)
+                        (let ((session (cdr (assoc cand candidates))))
+                          (concat (make-string (1+ (- width (length cand))) ?\s)
+                                  (propertize (or (nth 2 session) "")
+                                              'face 'completions-annotations)
+                                  (and (nth 3 session) "  [attached]"))))))
+              (complete-with-action action candidates string pred)))))
+    (cdr (assoc (completing-read prompt table nil t) candidates))))
+
+(defun ai-tmux-imenu (session)
+  "Jump to any agent's background tmux SESSION, from one list of all of them.
+
+What `imenu' is to the places in a buffer, this is to the conversations
+running on this machine: every session on every agent's tmux server in a
+single list, most recently used first -- including ones started from
+another Emacs, another machine's ssh connection, or a plain terminal --
+and picking one shows it in this Emacs, starting a client for it when
+this Emacs has none.
+
+`claude-tmux-switch' and `antigravity-tmux-switch' are the same thing for
+one agent at a time."
+  (interactive (list (ai-tmux--read-any-session "Agent session: ")))
+  (pcase-let* ((`(,agent ,name ,dir ,attached) session)
+               (attach (cdr (assoc agent ai-tmux-agents))))
+    (unless attach (user-error "No way to attach to a %s session" agent))
+    (funcall attach (list name dir attached))))
 
 (defun ai-wt--git (dir &rest args)
   "Run git with ARGS in DIR and return its output, trimmed.
@@ -1810,6 +1890,10 @@ terminal -- and re-attaches to the one you pick.  When this Emacs is
 already showing that session, pop to its buffer instead of attaching a
 second client to it."
   (interactive (list (ai-tmux--read-session "claude" "Claude session: ")))
+  (claude-tmux--attach session))
+
+(defun claude-tmux--attach (session)
+  "Show the claude tmux SESSION, (NAME DIRECTORY ATTACHED), in this Emacs."
   (require 'claude-code)
   (pcase-let* ((`(,name ,dir ,attached) session)
                (dir (and dir (file-name-as-directory dir)))
@@ -1968,6 +2052,10 @@ terminal -- and re-attaches to the one you pick.  When this Emacs is
 already showing that session, pop to its buffer instead of attaching a
 second client to it."
   (interactive (list (ai-tmux--read-session "antigravity" "Antigravity session: ")))
+  (antigravity-tmux--attach session))
+
+(defun antigravity-tmux--attach (session)
+  "Show the antigravity tmux SESSION, (NAME DIRECTORY ATTACHED), in this Emacs."
   (pcase-let* ((`(,name ,dir ,attached) session)
                (dir (and dir (file-name-as-directory dir)))
                (live (and attached dir (file-directory-p dir)
@@ -1999,17 +2087,22 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   (interactive (list (read-string "Worktree/branch name: ")))
   (pop-to-buffer (antigravity--start (ai-wt--worktree name))))
 
-(defvar antigravity-command-map
+(defvar ai-command-map
   (let ((map (make-sparse-keymap)))
+    ;; Across every agent.
+    (define-key map "i" #'ai-tmux-imenu)
+    ;; Claude keeps claude-code.el's own map on C-c c; this is only the way in.
+    (define-key map "c" #'claude)
+    ;; Antigravity, which has no map of its own.
     (define-key map "a" #'antigravity)
     (define-key map "b" #'antigravity-select-buffer)
     (define-key map "s" #'antigravity-tmux-switch)
     (define-key map "k" #'antigravity-tmux-kill)
     (define-key map "w" #'antigravity-wt)
     map)
-  "Keymap for the Antigravity commands, bound to \\`C-c a'.")
+  "Keymap for the coding-agent commands, bound to \\`C-c a'.")
 
-(global-set-key (kbd "C-c a") antigravity-command-map)
+(global-set-key (kbd "C-c a") ai-command-map)
 
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

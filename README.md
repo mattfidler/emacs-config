@@ -138,6 +138,9 @@ ln -sfn ai-tmux ~/.local/bin/antigravity-tmux
 ln -sfn ai-wt   ~/.local/bin/claude-wt
 ln -sfn ai-wt   ~/.local/bin/antigravity-wt
 install -m 644 ai-tmux.conf ~/.config/ai-tmux.conf
+install -m 755 emacsreset ~/.local/bin/
+install -m 644 bash-emacs.sh ~/.config/bash-emacs.sh
+echo '[ -f "$HOME/.config/bash-emacs.sh" ] && . "$HOME/.config/bash-emacs.sh"' >> ~/.bashrc
 ```
 
 Each agent reads its own environment: `CLAUDE_TMUX_SESSION`, `CLAUDE_TMUX_THEME`,
@@ -157,21 +160,30 @@ and start the agent again -- or, from Emacs, `M-x claude-tmux-kill` and
 
 ### Commands
 
-Claude keeps claude-code.el's own map on `C-c c`.  Antigravity's commands are on
-`C-c a`, and are the same four:
+`C-c a i` is the one to remember.  What `imenu` is to the places in a buffer,
+`ai-tmux-imenu` is to the conversations running on this machine: every session on
+every agent's tmux server in a single list, most recently used first -- including
+ones started from another Emacs, another machine's ssh connection, or a plain
+terminal -- annotated with the directory it was started in and whether something
+is already viewing it.  Picking one shows it in this Emacs, starting a client for
+it if this Emacs has none.  Candidates are named `agent/session`, since two
+agents working in the same directory derive the same session name.
+
+The rest are per-agent.  Claude keeps claude-code.el's own map on `C-c c`;
+Antigravity has no package and so no map, and borrows `C-c a`:
 
 | | Claude | Antigravity |
 | --- | --- | --- |
-| start, or return to this project's agent | `M-x claude` | `C-c a a` |
+| jump to any agent's session | `C-c a i` | `C-c a i` |
+| start, or return to this project's agent | `C-c a c` | `C-c a a` |
 | switch between this Emacs's agent buffers | `C-c c b` | `C-c a b` |
 | attach to a background tmux session | `M-x claude-tmux-switch` | `C-c a s` |
 | end a background tmux session | `M-x claude-tmux-kill` | `C-c a k` |
 | start on a fresh git worktree | `M-x claude-wt` | `C-c a w` |
 
-Switching lists every session on that agent's tmux server -- including ones
-started from another Emacs, another machine's ssh connection, or a plain
-terminal -- annotated with the directory it was started in and whether something
-is already viewing it.
+`ai-tmux-agents` is the list `ai-tmux-imenu` walks: each entry pairs an agent's
+tmux server with the function that shows one of its sessions, so a third agent is
+one line there and a `--attach` function of its own.
 
 Everything that is not particular to one agent is shared in `emacs-config.el`:
 `ai-term--directory` (which directory a buffer belongs to), `ai-term--theme`,
@@ -231,3 +243,34 @@ run `my-eat-fit-columns-mode` (`C-c f`), which shrinks the text on its own while
 the window is too narrow to show `my-eat-min-columns` columns -- agents wrap code
 snippets and diffs to the width of their terminal, so a narrow window otherwise
 mangles them.  Zooming by hand sets the size the mode grows back to.
+
+## Emacs from the shell
+
+A second Emacs is a second copy of every package and of the native-compilation
+cache, and it cannot see the buffers -- agent terminals included -- that the
+running one already has.  So `emacs` in bash is a client of the daemon:
+
+| file | goes to | what it does |
+| --- | --- | --- |
+| `bash-emacs.sh` | `~/.config/bash-emacs.sh` | makes `emacs` an `emacsclient`, sourced from `~/.bashrc` |
+| `emacsreset` | `~/.local/bin/emacsreset` | stops the daemon, so the next `emacs` starts a fresh one |
+
+`emacs` opens a graphical frame where there is a display to put one on and a
+terminal frame where there is not, and brings the daemon up first if it is not
+running -- through `systemctl --user start emacs` on machines where systemd
+manages it, so it is supervised the same way either way.  The calls a client
+cannot serve are handed to the real binary untouched: `--batch`, `--script`, `-Q`
+and `-q` have no init to share, and `--daemon` is what we would be connecting to.
+So `emacs --batch` in a script still starts its own Emacs, as it must.
+
+`emacsreset` is how a change to `emacs-config.el` gets picked up.  The daemon
+holds the config it was started with for as long as it runs, which is why a
+fortnight-old daemon was still copying to the tmux buffer and nowhere else long
+after that was fixed.  It saves every modified buffer first -- it restarts the
+process, not the work -- and the agent conversations are in tmux rather than in
+Emacs, so they survive it; `C-c a i` brings them back.
+
+```sh
+emacsreset          # the daemon
+emacsreset NAME     # some other server, from `M-x server-start'
+```

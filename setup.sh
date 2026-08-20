@@ -287,6 +287,22 @@ mkdir -p "${HOME}/.config"
 
 install -m 644 ai-tmux.conf "${HOME}/.config/ai-tmux.conf"
 
+# Run Emacs through the daemon rather than starting a second one, and add
+# emacsreset to stop the daemon so the next `emacs' picks up a config change.
+
+install -m 755 emacsreset "${HOME}/.local/bin/"
+
+install -m 644 bash-emacs.sh "${HOME}/.config/bash-emacs.sh"
+
+if ! grep -q 'bash-emacs.sh' "${HOME}/.bashrc"; then
+    cat >> "${HOME}/.bashrc" <<'EOF'
+
+# Run Emacs through the daemon rather than starting a second one, and add
+# emacsreset; see ~/src/emacs-config/README.md
+[ -f "$HOME/.config/bash-emacs.sh" ] && . "$HOME/.config/bash-emacs.sh"
+EOF
+fi
+
 # Mail: gmail synced into ~/.mail/gmail by mbsync, indexed by mu, read in mu4e;
 # see README.md for the app password and the first sync
 

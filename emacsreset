@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# emacsreset -- stop the Emacs daemon, so the next `emacs' starts a fresh one.
+#
+# This is how a change to emacs-config.el gets picked up: the daemon holds the
+# config it was started with for as long as it runs, and a daemon that has been
+# up for a fortnight is running a fortnight-old config.
+#
+# Everything modified is saved first -- this restarts the process, not the work
+# -- and the agent conversations are not in Emacs at all but in tmux, so they
+# survive it.  Come back to them with C-c a i.
+#
+# Usage: emacsreset [SERVER-NAME]
+
+set -uo pipefail
+
+client=(emacsclient)
+if [ $# -gt 0 ] && [ -n "$1" ]; then
+    client=(emacsclient -s "$1")
+fi
+
+if "${client[@]}" --suppress-output --eval t >/dev/null 2>&1; then
+    saved=$("${client[@]}" --eval '(let ((n 0))
+        (dolist (buffer (buffer-list))
+          (when (and (buffer-file-name buffer) (buffer-modified-p buffer))
+            (with-current-buffer buffer (save-buffer))
+            (setq n (1+ n))))
+        n)' 2>/dev/null | tr -dc '0-9')
+    printf 'emacsreset: saved %s modified buffer(s)\n' "${saved:-0}"
+else
+    printf 'emacsreset: no Emacs server was running\n'
+fi
+
+# Stop it the way it was started, so systemd does not read the exit as a failure
+# and bring it straight back up.
+if [ ${#client[@]} -eq 1 ] && systemctl --user is-active --quiet emacs 2>/dev/null; then
+    systemctl --user stop emacs && printf 'emacsreset: stopped emacs.service\n'
+else
+    "${client[@]}" --suppress-output --eval '(kill-emacs)' >/dev/null 2>&1
+fi
+
+for _ in $(seq 1 20); do
+    "${client[@]}" --suppress-output --eval t >/dev/null 2>&1 || break
+    sleep 0.5
+done
+
+if "${client[@]}" --suppress-output --eval t >/dev/null 2>&1; then
+    printf 'emacsreset: the server is still answering; it did not stop\n' >&2
+    exit 1
+fi
+
+printf "emacsreset: stopped -- the next 'emacs' will start a fresh one\n"
