@@ -1369,11 +1369,37 @@
 ;; Read an unnamed selection as the clipboard, which is what every program
 ;; that sends one means by it.
 
+(defun eat-osc52--clipboard-frame ()
+  "Return a frame whose display can own the clipboard, or nil for none.
+
+`kill-new' hands the text to the window system of whichever frame is
+selected when it runs, and the frame selected when a copy arrives is
+whichever one Emacs happened to be in -- in a daemon that is the initial
+text frame, which owns no clipboard at all.  Prefer the selected frame,
+then the one showing this terminal, then any graphical frame."
+  (or (and (display-graphic-p) (selected-frame))
+      (let ((window (get-buffer-window nil t)))
+        (and window
+             (display-graphic-p (window-frame window))
+             (window-frame window)))
+      (seq-find #'display-graphic-p (frame-list))))
+
 (defun eat-osc52-select-means-clipboard (fn terminal selection data)
   "Around FN, call `eat--manipulate-kill-ring' with the clipboard.
 SELECTION is remapped to `:clipboard' when it is the unnamed `:select'
-target; TERMINAL and DATA are passed through untouched."
-  (funcall fn terminal (if (eq selection :select) :clipboard selection) data))
+target; TERMINAL and DATA are passed through untouched.  The call is made
+from `eat-osc52--clipboard-frame', so the text reaches the X clipboard
+and not just the kill ring, and it says how much it copied, so a copy
+that never arrives is told apart from one that arrives and goes nowhere."
+  (let* ((selection (if (eq selection :select) :clipboard selection))
+         (frame (and (eq selection :clipboard) (stringp data)
+                     (eat-osc52--clipboard-frame))))
+    (if (and frame (not (eq frame (selected-frame))))
+        (with-selected-frame frame (funcall fn terminal selection data))
+      (funcall fn terminal selection data))
+    (when (and (stringp data) (eq selection :clipboard))
+      (message "Copied %d characters out of the terminal%s" (length data)
+               (if frame "" " (kill ring only: no graphical frame)")))))
 
 (with-eval-after-load 'eat
   (advice-add 'eat--manipulate-kill-ring :around
@@ -1567,15 +1593,150 @@ With a mouse EVENT, act on the terminal under the pointer."
       (unless (member bin (split-string path path-separator t))
         (setenv "PATH" (concat bin path-separator path))))))
 
+;;; Coding agents in a terminal.
+;;
+;; Claude and Antigravity run the same way: an eat buffer showing a client
+;; attached to a detachable tmux session of the agent's own (~/.local/bin/ai-tmux,
+;; installed once per agent as claude-tmux and antigravity-tmux), so a
+;; conversation outlives both a dropped ssh connection and an Emacs restart, and
+;; starting the agent again in the same directory re-attaches to it.
+;;
+;; claude-code.el is the Emacs half for Claude; the much smaller half Antigravity
+;; needs is below.  Everything that is not particular to one agent -- which
+;; directory a buffer belongs to, the theme to start in, listing and switching to
+;; and ending background sessions, cutting a worktree to start one in -- is
+;; shared, and each agent's commands are a few lines on top of it.
+
+(defun ai-term--directory ()
+  "Root directory an agent started from this buffer should work in.
+
+The project root when there is one, else the visited file's directory,
+else `default-directory'.  This repeats the choice `claude-code--directory'
+makes, so Antigravity agrees with Claude about which directory a buffer
+belongs to without having to load claude-code.el to ask."
+  (let ((project (project-current)))
+    (cond
+     (project (project-root project))
+     ((buffer-file-name) (file-name-directory (buffer-file-name)))
+     (t default-directory))))
+
+(defun ai-term--theme ()
+  "Whether this Emacs is a light or a dark one, as an agent theme name."
+  (if (eq (frame-parameter nil 'background-mode) 'dark) "dark" "light"))
+
+(defun ai-tmux--sessions (socket)
+  "Return the background agent sessions on SOCKET, most recently used first.
+
+SOCKET is the tmux server an agent keeps its sessions on: \"claude\" for
+Claude, \"antigravity\" for Antigravity.  Each element is (NAME DIRECTORY
+ATTACHED), where ATTACHED says whether some client -- an Emacs buffer or a
+terminal -- is currently viewing it."
+  (mapcar
+   #'cdr
+   (sort
+    (mapcar (lambda (line)
+              (pcase-let ((`(,name ,dir ,attached ,activity) (split-string line "\t")))
+                (list (string-to-number (or activity "0"))
+                      name dir (not (equal attached "0")))))
+            (split-string
+             (shell-command-to-string
+              (concat "tmux -L " (shell-quote-argument socket) " ls -F "
+                      "'#{session_name}\t#{session_path}\t"
+                      "#{session_attached}\t#{session_activity}' 2>/dev/null"))
+             "\n" t))
+    (lambda (a b) (> (car a) (car b))))))
+
+(defun ai-tmux--read-session (socket prompt)
+  "Read a background agent session on SOCKET with PROMPT.
+Returns the (NAME DIRECTORY ATTACHED) entry, annotated with the
+directory the session was started in."
+  (let* ((sessions (or (ai-tmux--sessions socket)
+                       (user-error "No background %s sessions" socket)))
+         (width (apply #'max (mapcar (lambda (s) (length (car s))) sessions)))
+         (table
+          (lambda (string pred action)
+            (if (eq action 'metadata)
+                `(metadata
+                  (category . ai-tmux-session)
+                  ;; keep `ai-tmux--sessions' most-recent-first order
+                  (display-sort-function . identity)
+                  (cycle-sort-function . identity)
+                  (annotation-function
+                   . ,(lambda (cand)
+                        (let ((session (assoc cand sessions)))
+                          (concat (make-string (1+ (- width (length cand))) ?\s)
+                                  (propertize (or (nth 1 session) "")
+                                              'face 'completions-annotations)
+                                  (and (nth 2 session) "  [attached]"))))))
+              (complete-with-action action sessions string pred)))))
+    (assoc (completing-read prompt table nil t) sessions)))
+
+(defun ai-tmux--kill (socket session)
+  "End the background agent SESSION on SOCKET.
+
+Killing an agent's buffer only detaches from tmux -- the agent keeps
+running so it can be re-attached.  This actually stops it."
+  (let ((name (if (consp session) (car session) session)))
+    (call-process "tmux" nil nil nil "-L" socket "kill-session" "-t" name)
+    (message "Ended %s session %s" socket name)))
+
+(defun ai-wt--git (dir &rest args)
+  "Run git with ARGS in DIR and return its output, trimmed.
+Signal an error carrying git's own message when the command fails."
+  (with-temp-buffer
+    (let* ((default-directory (file-name-as-directory dir))
+           (status (apply #'call-process "git" nil t nil args)))
+      (unless (eq status 0)
+        (user-error "git %s: %s" (string-join args " ")
+                    (string-trim (buffer-string))))
+      (string-trim (buffer-string)))))
+
+(defun ai-wt--branch-p (dir branch)
+  "Return non-nil when BRANCH already exists in the repository at DIR."
+  (let ((default-directory (file-name-as-directory dir)))
+    (eq 0 (call-process "git" nil nil nil "show-ref" "--verify" "--quiet"
+                        (concat "refs/heads/" branch)))))
+
+(defun ai-wt--worktree (name)
+  "Return a git worktree of this repository called NAME, making it if needed.
+
+Visiting ~/src/dir, NAME of \"feature-x\" puts the new branch feature-x
+in ~/src/dir-feature-x, so an agent can work on its own checkout while
+~/src/dir stays as you left it.
+
+The branch is cut from the current HEAD.  An existing branch of that name
+is checked out rather than recreated, and an existing worktree is simply
+re-entered -- which, since the agents run under tmux, re-attaches to the
+session already living there."
+  (let* ((name (string-trim name))
+         (_ (when (string-empty-p name) (user-error "No name given")))
+         (root (directory-file-name
+                (ai-wt--git default-directory "rev-parse" "--show-toplevel")))
+         ;; feature/foo -> dir-foo, so the worktree stays a flat sibling.
+         (leaf (replace-regexp-in-string
+                "[^A-Za-z0-9._-]" "-" (file-name-nondirectory name)))
+         (worktree (expand-file-name
+                    (concat (file-name-nondirectory root) "-" leaf)
+                    (file-name-directory root))))
+    (cond
+     ((file-directory-p worktree)
+      (message "Re-using existing worktree %s" worktree))
+     ((file-exists-p worktree)
+      (user-error "%s exists and is not a directory" worktree))
+     ((ai-wt--branch-p root name)
+      (ai-wt--git root "worktree" "add" "--" worktree name))
+     (t
+      (ai-wt--git root "worktree" "add" "-b" name "--" worktree "HEAD")))
+    (file-name-as-directory worktree)))
+
+;;;; Claude
+
 (defun claude-code-theme-environment (&rest _)
   "Tell `claude-tmux' whether this Emacs is a light or a dark one.
 It turns CLAUDE_TMUX_THEME into claude's own --settings theme, so a
 solarized-dark Emacs gets a dark claude and a solarized-light one a light
 claude instead of whatever theme was picked last."
-  (list (format "CLAUDE_TMUX_THEME=%s"
-                (if (eq (frame-parameter nil 'background-mode) 'dark)
-                    "dark"
-                  "light"))))
+  (list (format "CLAUDE_TMUX_THEME=%s" (ai-term--theme))))
 
 (use-package claude-code :ensure t
   :vc (:url "https://github.com/stevemolitor/claude-code.el" :rev :newest)
@@ -1609,6 +1770,21 @@ claude instead of whatever theme was picked last."
   :bind
   (:repeat-map my-claude-code-map ("M" . claude-code-cycle-mode)))
 
+(defun claude-code--start-in (directory &optional session)
+  "Start Claude working in DIRECTORY, in a new buffer.
+
+SESSION names a background tmux session to re-attach to.  Without one,
+claude-tmux derives the session from DIRECTORY, so a session already
+running there is re-entered instead of duplicated."
+  (require 'claude-code)
+  (let* ((start-dir (file-name-as-directory (expand-file-name directory)))
+         (default-directory start-dir)
+         (process-environment
+          (append (and session (list (concat "CLAUDE_TMUX_SESSION=" session)))
+                  process-environment)))
+    (cl-letf (((symbol-function 'claude-code--directory) (lambda () start-dir)))
+      (claude-code '(4)))))
+
 (defun claude (&optional arg)
   "Attach to this project's Claude session, starting one if needed.
 
@@ -1625,51 +1801,6 @@ ssh connection.  With prefix ARG, always start a new instance."
      ((= 1 (length buffers)) (pop-to-buffer (car buffers)))
      (t (call-interactively #'claude-code-select-buffer)))))
 
-(defun claude-tmux--sessions ()
-  "Return the background claude tmux sessions, most recently used first.
-
-Each element is (NAME DIRECTORY ATTACHED), where ATTACHED says whether
-some client -- an Emacs buffer or a terminal -- is currently viewing it."
-  (mapcar
-   #'cdr
-   (sort
-    (mapcar (lambda (line)
-              (pcase-let ((`(,name ,dir ,attached ,activity) (split-string line "\t")))
-                (list (string-to-number (or activity "0"))
-                      name dir (not (equal attached "0")))))
-            (split-string
-             (shell-command-to-string
-              (concat "tmux -L claude ls -F "
-                      "'#{session_name}\t#{session_path}\t"
-                      "#{session_attached}\t#{session_activity}' 2>/dev/null"))
-             "\n" t))
-    (lambda (a b) (> (car a) (car b))))))
-
-(defun claude-tmux--read-session (prompt)
-  "Read a background claude tmux session with PROMPT.
-Returns the (NAME DIRECTORY ATTACHED) entry, annotated with the
-directory the session was started in."
-  (let* ((sessions (or (claude-tmux--sessions)
-                       (user-error "No background claude sessions")))
-         (width (apply #'max (mapcar (lambda (s) (length (car s))) sessions)))
-         (table
-          (lambda (string pred action)
-            (if (eq action 'metadata)
-                `(metadata
-                  (category . claude-tmux-session)
-                  ;; keep `claude-tmux--sessions' most-recent-first order
-                  (display-sort-function . identity)
-                  (cycle-sort-function . identity)
-                  (annotation-function
-                   . ,(lambda (cand)
-                        (let ((session (assoc cand sessions)))
-                          (concat (make-string (1+ (- width (length cand))) ?\s)
-                                  (propertize (or (nth 1 session) "")
-                                              'face 'completions-annotations)
-                                  (and (nth 2 session) "  [attached]"))))))
-              (complete-with-action action sessions string pred)))))
-    (assoc (completing-read prompt table nil t) sessions)))
-
 (defun claude-tmux-switch (session)
   "Attach to a background claude tmux SESSION in this Emacs.
 
@@ -1678,7 +1809,7 @@ from another Emacs, another machine's ssh connection, or a plain
 terminal -- and re-attaches to the one you pick.  When this Emacs is
 already showing that session, pop to its buffer instead of attaching a
 second client to it."
-  (interactive (list (claude-tmux--read-session "Claude session: ")))
+  (interactive (list (ai-tmux--read-session "claude" "Claude session: ")))
   (require 'claude-code)
   (pcase-let* ((`(,name ,dir ,attached) session)
                (dir (and dir (file-name-as-directory dir)))
@@ -1687,83 +1818,198 @@ second client to it."
     (cond
      ((= 1 (length live)) (pop-to-buffer (car live)))
      (live (call-interactively #'claude-code-select-buffer))
-     (t
-      ;; claude-tmux re-attaches to CLAUDE_TMUX_SESSION when it exists, so name
-      ;; the session explicitly rather than relying on it being derivable from
-      ;; the directory (which may be gone, or shared by several sessions).
-      (let* ((default-directory (if (and dir (file-directory-p dir))
-                                    dir
-                                  default-directory))
-             (start-dir default-directory)
-             (process-environment (cons (concat "CLAUDE_TMUX_SESSION=" name)
-                                        process-environment)))
-        (cl-letf (((symbol-function 'claude-code--directory) (lambda () start-dir)))
-          (claude-code '(4))))))))
+     ;; claude-tmux re-attaches to CLAUDE_TMUX_SESSION when it exists, so name
+     ;; the session explicitly rather than relying on it being derivable from
+     ;; the directory (which may be gone, or shared by several sessions).
+     (t (claude-code--start-in (if (and dir (file-directory-p dir))
+                                   dir
+                                 default-directory)
+                               name)))))
 
 (defun claude-tmux-kill (session)
   "End the background claude tmux SESSION.
 
 Killing a Claude buffer only detaches from tmux -- the claude process
 keeps running so it can be re-attached.  Use this to actually stop it."
-  (interactive (list (claude-tmux--read-session "End claude session: ")))
-  (let ((name (if (consp session) (car session) session)))
-    (call-process "tmux" nil nil nil "-L" "claude" "kill-session" "-t" name)
-    (message "Ended claude session %s" name)))
-
-(defun claude-wt--git (dir &rest args)
-  "Run git with ARGS in DIR and return its output, trimmed.
-Signal an error carrying git's own message when the command fails."
-  (with-temp-buffer
-    (let* ((default-directory (file-name-as-directory dir))
-           (status (apply #'call-process "git" nil t nil args)))
-      (unless (eq status 0)
-        (user-error "git %s: %s" (string-join args " ")
-                    (string-trim (buffer-string))))
-      (string-trim (buffer-string)))))
-
-(defun claude-wt--branch-p (dir branch)
-  "Return non-nil when BRANCH already exists in the repository at DIR."
-  (let ((default-directory (file-name-as-directory dir)))
-    (eq 0 (call-process "git" nil nil nil "show-ref" "--verify" "--quiet"
-                        (concat "refs/heads/" branch)))))
+  (interactive (list (ai-tmux--read-session "claude" "End claude session: ")))
+  (ai-tmux--kill "claude" session))
 
 (defun claude-wt (name)
   "Start Claude on a fresh git worktree of this repository, named NAME.
 
-Visiting ~/src/dir, NAME of \"feature-x\" puts the new branch feature-x
-in ~/src/dir-feature-x and opens a Claude buffer there, so an agent can
-work on its own checkout while ~/src/dir stays as you left it.
-
-The branch is cut from the current HEAD.  An existing branch of that
-name is checked out rather than recreated, and an existing worktree is
-simply re-entered -- which, since Claude runs under tmux, re-attaches to
-the session already living there."
+See `ai-wt--worktree' for how the worktree and its branch are chosen."
   (interactive (list (read-string "Worktree/branch name: ")))
-  (require 'claude-code)
-  (let* ((name (string-trim name))
-         (_ (when (string-empty-p name) (user-error "No name given")))
-         (root (directory-file-name
-                (claude-wt--git default-directory
-                                "rev-parse" "--show-toplevel")))
-         ;; feature/foo -> dir-foo, so the worktree stays a flat sibling.
-         (leaf (replace-regexp-in-string
-                "[^A-Za-z0-9._-]" "-" (file-name-nondirectory name)))
-         (worktree (expand-file-name
-                    (concat (file-name-nondirectory root) "-" leaf)
-                    (file-name-directory root))))
-    (cond
-     ((file-directory-p worktree)
-      (message "Re-using existing worktree %s" worktree))
-     ((file-exists-p worktree)
-      (user-error "%s exists and is not a directory" worktree))
-     ((claude-wt--branch-p root name)
-      (claude-wt--git root "worktree" "add" "--" worktree name))
-     (t
-      (claude-wt--git root "worktree" "add" "-b" name "--" worktree "HEAD")))
-    (let* ((default-directory (file-name-as-directory worktree))
-           (start-dir default-directory))
-      (cl-letf (((symbol-function 'claude-code--directory) (lambda () start-dir)))
-        (claude-code '(4))))))
+  (claude-code--start-in (ai-wt--worktree name)))
+
+;;;; Antigravity
+;;
+;; Antigravity has no Emacs package, and needs none: it is a terminal program
+;; like claude, so an eat buffer running antigravity-tmux in the project root is
+;; the whole of it.  These are the same four commands Claude has -- start or
+;; return to this project's agent, switch to a background session, end one, and
+;; start one on a fresh worktree -- over the shared code above.
+
+(defgroup antigravity nil
+  "Run Antigravity's `agy' CLI in an Emacs terminal."
+  :group 'tools)
+
+(defcustom antigravity-program "antigravity-tmux"
+  "Program `antigravity' runs in an eat terminal.
+
+The default, ~/.local/bin/antigravity-tmux, is ~/.local/bin/ai-tmux under
+the name that makes it run `agy' in a detachable tmux session; set this to
+\"agy\" to run the CLI directly and lose the conversation with the buffer."
+  :type 'string
+  :group 'antigravity)
+
+(defun antigravity--buffer-name (directory &optional instance)
+  "Name of the Antigravity buffer working in DIRECTORY.
+INSTANCE distinguishes a second agent started in the same directory."
+  ;; Always a directory name, trailing slash and all, so a buffer is found
+  ;; again whether the caller had one or not -- and so the names read the same
+  ;; as claude-code.el's.
+  (let ((dir (abbreviate-file-name
+              (file-name-as-directory (file-truename directory)))))
+    (if instance
+        (format "*antigravity:%s:%s*" dir instance)
+      (format "*antigravity:%s*" dir))))
+
+(defun antigravity--buffers-for-directory (directory)
+  "Live Antigravity terminals working in DIRECTORY."
+  (let ((regexp (concat "\\`"
+                        (regexp-quote (string-trim-right
+                                       (antigravity--buffer-name directory) "\\*"))
+                        "\\(?::[^*]+\\)?\\*\\'")))
+    (seq-filter (lambda (buffer)
+                  (and (string-match-p regexp (buffer-name buffer))
+                       (get-buffer-process buffer)))
+                (buffer-list))))
+
+(defun antigravity--all-buffers ()
+  "Every live Antigravity terminal in this Emacs."
+  (seq-filter (lambda (buffer)
+                (and (string-prefix-p "*antigravity:" (buffer-name buffer))
+                     (get-buffer-process buffer)))
+              (buffer-list)))
+
+(defun antigravity--unused-buffer-name (directory)
+  "An Antigravity buffer name for DIRECTORY that no buffer has taken."
+  (if (not (get-buffer (antigravity--buffer-name directory)))
+      (antigravity--buffer-name directory)
+    (let ((n 2))
+      (while (get-buffer (antigravity--buffer-name directory (number-to-string n)))
+        (setq n (1+ n)))
+      (antigravity--buffer-name directory (number-to-string n)))))
+
+(defun antigravity--read-buffer (prompt buffers)
+  "Read one of BUFFERS with PROMPT, or return it when there is only one."
+  (if (cdr buffers)
+      (get-buffer (completing-read prompt (mapcar #'buffer-name buffers) nil t))
+    (car buffers)))
+
+(defun antigravity--start (directory &optional session)
+  "Open an Antigravity terminal working in DIRECTORY and return its buffer.
+
+SESSION names a background tmux session to re-attach to.  Without one,
+antigravity-tmux derives the session from DIRECTORY, so a session already
+running there is re-entered instead of duplicated."
+  (require 'eat)
+  (unless (executable-find antigravity-program)
+    (user-error "Antigravity program `%s' not found in PATH" antigravity-program))
+  (let* ((directory (file-name-as-directory (expand-file-name directory)))
+         (default-directory directory)
+         (name (antigravity--unused-buffer-name directory))
+         ;; Without this the terminal flickers while the agent redraws.
+         (process-adaptive-read-buffering nil)
+         (process-environment
+          (append (list (format "ANTIGRAVITY_TMUX_THEME=%s" (ai-term--theme)))
+                  (and session (list (concat "ANTIGRAVITY_TMUX_SESSION=" session)))
+                  process-environment))
+         (buffer (eat-make (string-trim name "\\*" "\\*") antigravity-program)))
+    (with-current-buffer buffer
+      ;; Nothing in here is a shell, and a scroll back through the conversation
+      ;; should not run off the end of what eat kept.
+      (setq-local eat-enable-directory-tracking nil)
+      (setq-local eat-enable-shell-prompt-annotation nil)
+      (setq-local eat-term-scrollback-size nil)
+      ;; Antigravity wraps code snippets to the width of its terminal, so shrink
+      ;; the text rather than let a narrow window wrap them, exactly as the
+      ;; claude buffers do.
+      (my-eat-fit-columns-mode 1))
+    buffer))
+
+(defun antigravity (&optional arg)
+  "Attach to this project's Antigravity session, starting one if needed.
+
+Re-uses the running Antigravity buffer for the current project when there
+is one, so this is also the way back in after an Emacs restart or a
+dropped ssh connection.  With prefix ARG, always start a new instance."
+  (interactive "P")
+  (let* ((dir (ai-term--directory))
+         (buffers (and (null arg) dir (antigravity--buffers-for-directory dir))))
+    (pop-to-buffer
+     (if buffers
+         (antigravity--read-buffer "Antigravity buffer: " buffers)
+       (antigravity--start dir)))))
+
+(defun antigravity-select-buffer ()
+  "Switch to one of the Antigravity terminals running in this Emacs."
+  (interactive)
+  (let ((buffers (or (antigravity--all-buffers)
+                     (user-error "No Antigravity buffers"))))
+    (pop-to-buffer (antigravity--read-buffer "Antigravity buffer: " buffers))))
+
+(defun antigravity-tmux-switch (session)
+  "Attach to a background antigravity tmux SESSION in this Emacs.
+
+Lists every session on the antigravity tmux server -- including ones
+started from another Emacs, another machine's ssh connection, or a plain
+terminal -- and re-attaches to the one you pick.  When this Emacs is
+already showing that session, pop to its buffer instead of attaching a
+second client to it."
+  (interactive (list (ai-tmux--read-session "antigravity" "Antigravity session: ")))
+  (pcase-let* ((`(,name ,dir ,attached) session)
+               (dir (and dir (file-name-as-directory dir)))
+               (live (and attached dir (file-directory-p dir)
+                          (antigravity--buffers-for-directory dir))))
+    (pop-to-buffer
+     (if live
+         (antigravity--read-buffer "Antigravity buffer: " live)
+       ;; antigravity-tmux re-attaches to ANTIGRAVITY_TMUX_SESSION when it
+       ;; exists, so name the session explicitly rather than relying on it being
+       ;; derivable from the directory (which may be gone, or shared by several
+       ;; sessions).
+       (antigravity--start (if (and dir (file-directory-p dir))
+                               dir
+                             default-directory)
+                           name)))))
+
+(defun antigravity-tmux-kill (session)
+  "End the background antigravity tmux SESSION.
+
+Killing an Antigravity buffer only detaches from tmux -- the agent keeps
+running so it can be re-attached.  Use this to actually stop it."
+  (interactive (list (ai-tmux--read-session "antigravity" "End antigravity session: ")))
+  (ai-tmux--kill "antigravity" session))
+
+(defun antigravity-wt (name)
+  "Start Antigravity on a fresh git worktree of this repository, named NAME.
+
+See `ai-wt--worktree' for how the worktree and its branch are chosen."
+  (interactive (list (read-string "Worktree/branch name: ")))
+  (pop-to-buffer (antigravity--start (ai-wt--worktree name))))
+
+(defvar antigravity-command-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "a" #'antigravity)
+    (define-key map "b" #'antigravity-select-buffer)
+    (define-key map "s" #'antigravity-tmux-switch)
+    (define-key map "k" #'antigravity-tmux-kill)
+    (define-key map "w" #'antigravity-wt)
+    map)
+  "Keymap for the Antigravity commands, bound to \\`C-c a'.")
+
+(global-set-key (kbd "C-c a") antigravity-command-map)
 
 (provide 'emacs-config)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

@@ -270,17 +270,22 @@ mkdir -p "${HOME}/.ccache"
 
 cp ccache "${HOME}/.ccache/ccache.conf"
 
-# Claude Code runs under its own tmux server; see README.md
+# Claude Code and Antigravity each run under a tmux server of their own; see
+# README.md.  One copy of each script serves both agents and works out which one
+# it is from the name it was called by, so install it once and link the names.
 
 mkdir -p "${HOME}/.local/bin"
 
-cp claude-tmux claude-wt "${HOME}/.local/bin/"
+install -m 755 ai-tmux ai-wt "${HOME}/.local/bin/"
 
-chmod +x "${HOME}/.local/bin/claude-tmux" "${HOME}/.local/bin/claude-wt"
+ln -sfn ai-tmux "${HOME}/.local/bin/claude-tmux"
+ln -sfn ai-tmux "${HOME}/.local/bin/antigravity-tmux"
+ln -sfn ai-wt   "${HOME}/.local/bin/claude-wt"
+ln -sfn ai-wt   "${HOME}/.local/bin/antigravity-wt"
 
 mkdir -p "${HOME}/.config"
 
-cp claude-tmux.conf "${HOME}/.config/claude-tmux.conf"
+install -m 644 ai-tmux.conf "${HOME}/.config/ai-tmux.conf"
 
 # Mail: gmail synced into ~/.mail/gmail by mbsync, indexed by mu, read in mu4e;
 # see README.md for the app password and the first sync

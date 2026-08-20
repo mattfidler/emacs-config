@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# ai-tmux -- run a coding agent inside a dedicated, detachable tmux session.
+#
+# The tmux session outlives the Emacs buffer that displays it, so neither a
+# dropped ssh connection nor an Emacs restart kills the conversation: running
+# this again from the same directory re-attaches to the live agent.
+#
+# One copy serves every agent.  It is installed under one name per agent --
+# claude-tmux runs claude, antigravity-tmux runs agy -- and works out which
+# agent it is from the name it was called by, so each gets its own tmux server
+# and its own environment variables:
+#
+#   claude-tmux       claude       socket claude        CLAUDE_TMUX_*
+#   antigravity-tmux  agy          socket antigravity   ANTIGRAVITY_TMUX_*
+#
+# The session name is derived from the working directory.  Set <AGENT>_TMUX_SESSION
+# to run more than one agent of the same kind in the same directory.  Sessions
+# live on their own tmux server (-L <agent>) so they never mix with, or inherit
+# key bindings from, your normal tmux -- nor with each other.
+
+set -uo pipefail
+
+# Which agent are we?  `ai-tmux' itself, or an unrecognised name, falls back to
+# AI_TMUX_TOOL and then to claude.
+tool=$(basename -- "$0")
+tool=${tool%-tmux}
+case $tool in
+    ''|ai) tool=${AI_TMUX_TOOL:-claude} ;;
+esac
+
+case $tool in
+    claude)      default_program=claude ;;
+    antigravity) default_program=agy ;;
+    *)           default_program=$tool ;;
+esac
+
+# CLAUDE_TMUX_SESSION, ANTIGRAVITY_TMUX_PROGRAM, ...
+prefix=$(printf '%s' "$tool" | tr '[:lower:]-' '[:upper:]_')
+setting() { eval "printf '%s' \"\${${prefix}_TMUX_$1-}\""; }
+
+socket=$tool
+conf=$(setting CONF)
+conf=${conf:-$HOME/.config/ai-tmux.conf}
+program=$(setting PROGRAM)
+program=${program:-$default_program}
+session=$(setting SESSION)
+theme=$(setting THEME)
+
+if [ -z "$session" ]; then
+    # readable leaf name, plus a hash of the full path to keep it unique
+    leaf=$(basename -- "$PWD" | tr -c 'A-Za-z0-9_-' '-')
+    hash=$(printf '%s' "$PWD" | cksum | cut -d' ' -f1)
+    session="${leaf:-root}-${hash}"
+fi
+
+# tmux does not allow '.' or ':' in a session name
+session=${session//./-}
+session=${session//:/-}
+
+# Quote everything into a single shell-command argument so switches such as
+# --continue are never mistaken for tmux's own options.
+cmd=$(printf '%q' "$program")
+
+# Match the agent's colours to the theme of whatever started it: emacs-config.el
+# exports <AGENT>_TMUX_THEME=dark or light from the frame's background mode, so a
+# solarized-dark Emacs gets a dark agent and a solarized-light one a light agent.
+# Only new sessions take it -- an existing one keeps the theme it was started
+# with until you say /theme inside it.  Only claude has a switch for this; the
+# others read the terminal's own background colour, which eat answers for them.
+if [ "$tool" = claude ]; then
+    case $theme in
+        dark|light)
+            cmd="$cmd --settings $(printf '%q' "{\"theme\":\"$theme\"}")"
+            ;;
+    esac
+fi
+
+for arg in "$@"; do
+    cmd="$cmd $(printf '%q' "$arg")"
+done
+
+# -u TMUX: never nest, even when the caller is itself running under tmux.
+# new-session -A: attach to the session if it already exists, else create it.
+exec env -u TMUX tmux -L "$socket" -f "$conf" \
+     new-session -A -s "$session" -c "$PWD" "$cmd"

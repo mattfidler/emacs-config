@@ -1,20 +1,29 @@
 #!/usr/bin/env bash
-# claude-wt -- start Claude Code in a fresh git worktree of the current repo.
+# ai-wt -- start a coding agent in a fresh git worktree of the current repo.
 #
 # Working in ~/src/dir, `claude-wt feature-x' creates the branch feature-x in
 # ~/src/dir-feature-x and runs claude there, so an agent can churn on its own
-# checkout while ~/src/dir stays exactly as you left it.
+# checkout while ~/src/dir stays exactly as you left it.  `antigravity-wt' does
+# the same for antigravity: like ai-tmux, one copy serves every agent and works
+# out which one from the name it was called by.
 #
 # With no argument it asks for the worktree/branch name.  The branch is cut
 # from the current HEAD; an existing branch of that name is checked out
 # instead of being recreated, and an existing worktree is simply re-entered
-# (so running this again re-attaches to the claude session living there).
+# (so running this again re-attaches to the agent session living there).
 #
-# Usage: claude-wt [NAME] [claude args...]
+# Usage: claude-wt [NAME] [agent args...]
+#        antigravity-wt [NAME] [agent args...]
 
 set -uo pipefail
 
-die() { printf 'claude-wt: %s\n' "$*" >&2; exit 1; }
+tool=$(basename -- "$0")
+tool=${tool%-wt}
+case $tool in
+    ''|ai) tool=${AI_TMUX_TOOL:-claude} ;;
+esac
+
+die() { printf '%s-wt: %s\n' "$tool" "$*" >&2; exit 1; }
 
 root=$(git rev-parse --show-toplevel 2>/dev/null) ||
     die "not inside a git repository"
@@ -49,9 +58,16 @@ fi
 
 cd "$worktree" || die "cannot enter $worktree"
 
-# claude-tmux keeps the conversation alive across Emacs restarts and dropped
-# ssh connections; fall back to plain claude when it is not installed.
-program=${CLAUDE_WT_PROGRAM:-claude-tmux}
-command -v "$program" >/dev/null 2>&1 || program=claude
+# <agent>-tmux keeps the conversation alive across Emacs restarts and dropped
+# ssh connections; fall back to the bare agent when it is not installed.
+prefix=$(printf '%s' "$tool" | tr '[:lower:]-' '[:upper:]_')
+eval "program=\${${prefix}_WT_PROGRAM-}"
+program=${program:-$tool-tmux}
+if ! command -v "$program" >/dev/null 2>&1; then
+    case $tool in
+        antigravity) program=agy ;;
+        *)           program=$tool ;;
+    esac
+fi
 
 exec "$program" "$@"
