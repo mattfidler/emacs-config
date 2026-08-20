@@ -34,6 +34,11 @@ fi
 # and bring it straight back up.
 if [ ${#client[@]} -eq 1 ] && systemctl --user is-active --quiet emacs 2>/dev/null; then
     systemctl --user stop emacs && printf 'emacsreset: stopped emacs.service\n'
+    # The unit's ExecStop is a kill-emacs of the very process systemd is
+    # waiting on, so a clean stop still lands the unit in `failed'.  Clear it,
+    # or `systemctl --user status emacs' reports red until the next `emacs'
+    # starts it again.
+    systemctl --user reset-failed emacs 2>/dev/null
 else
     "${client[@]}" --suppress-output --eval '(kill-emacs)' >/dev/null 2>&1
 fi
