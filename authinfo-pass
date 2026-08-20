@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# authinfo-pass -- print the password netrc/authinfo holds for a machine.
+#
+# Usage: authinfo-pass MACHINE [MACHINE...]
+#        authinfo-pass --list
+#
+# The first machine with an entry wins, so
+#
+#     authinfo-pass imap.gmail.com smtp.gmail.com
+#
+# falls back to the smtp entry on an account that keeps one password for both.
+# This is what ~/.mbsyncrc calls, so mbsync and Emacs read the same file and
+# there is no second copy of the password anywhere.
+#
+# --list names the machines the file knows about and says whether each carries a
+# password, printing no passwords -- which is how to see what is in there when a
+# lookup comes up empty.
+#
+# Reads $AUTHINFO, or ~/.authinfo.gpg, or ~/.authinfo -- whichever exists
+# first.  A .gpg file is decrypted, which may ask for the passphrase; gpg-agent
+# then holds it for the rest of the session.
+
+set -uo pipefail
+
+if [ "$#" -eq 0 ]; then
+    echo "usage: ${0##*/} MACHINE [MACHINE...] | --list" >&2
+    exit 2
+fi
+
+file=""
+for candidate in ${AUTHINFO:-} "$HOME/.authinfo.gpg" "$HOME/.authinfo"; do
+    if [ -n "$candidate" ] && [ -r "$candidate" ]; then
+        file=$candidate
+        break
+    fi
+done
+
+if [ -z "$file" ]; then
+    echo "${0##*/}: no authinfo file found" >&2
+    exit 1
+fi
+
+read_authinfo() {
+    case $file in
+        *.gpg) gpg --quiet --decrypt "$file" ;;
+        *) cat -- "$file" ;;
+    esac
+}
+
+# netrc is a stream of "key value" tokens, not a set of lines: an entry runs from
+# one "machine" (or a bare "default", which matches anything) to the next, and
+# may be spread over as many lines as it likes.  Emacs reads it that way, so this
+# does too -- otherwise the two disagree about what the password is.  A value in
+# double quotes may contain spaces, which is how a password with any has to be
+# written, and gmail hands out its app passwords in groups of four letters.
+parse_authinfo() {
+    awk -v want="$1" -v mode="$2" '
+      function tokenize(line, arr,   n, rest, quote) {
+        n = 0
+        rest = line
+        while (1) {
+          sub(/^[ \t]+/, "", rest)
+          if (rest == "") break
+          if (substr(rest, 1, 1) == "\"") {
+            rest = substr(rest, 2)
+            quote = index(rest, "\"")
+            if (quote == 0) { arr[++n] = rest; rest = "" }
+            else { arr[++n] = substr(rest, 1, quote - 1); rest = substr(rest, quote + 1) }
+          } else {
+            match(rest, /^[^ \t]+/)
+            arr[++n] = substr(rest, 1, RLENGTH)
+            rest = substr(rest, RLENGTH + 1)
+          }
+        }
+        return n
+      }
+      # Finish the entry in hand.  Returns 1 when the caller should stop.
+      # awk runs END even after exit, so once something is printed this has to
+      # keep quiet or the password comes out twice.
+      function flush(   name) {
+        if (found) return 1
+        if (!started) return 0
+        name = is_default ? "default" : machine
+        if (mode == "list") {
+          if (name != "") printf "%s\t%s\n", name, (password == "" ? "no password" : "has a password")
+          return 0
+        }
+        if ((is_default || machine == want) && password != "") {
+          print password
+          found = 1
+          return 1
+        }
+        return 0
+      }
+      /^[ \t]*#/ { next }
+      {
+        n = tokenize($0, tok)
+        for (i = 1; i <= n; i++) {
+          t = tok[i]
+          if (pending != "") {
+            if (pending == "machine") machine = t
+            else if (pending == "password") password = t
+            pending = ""
+            continue
+          }
+          if (t == "machine" || t == "default") {
+            if (flush()) exit
+            started = 1; machine = ""; password = ""; is_default = (t == "default")
+            if (t == "machine") pending = "machine"
+            continue
+          }
+          # Any other key takes the next token as its value.
+          pending = t
+        }
+      }
+      END { flush() }'
+}
+
+if [ "$1" = "--list" ]; then
+    read_authinfo | parse_authinfo "" list
+    exit $?
+fi
+
+for machine in "$@"; do
+    password=$(read_authinfo | parse_authinfo "$machine" get)
+    if [ -n "$password" ]; then
+        printf '%s\n' "$password"
+        exit 0
+    fi
+done
+
+echo "${0##*/}: no password for $* in $file" >&2
+echo "${0##*/}: try '${0##*/} --list' to see which machines it does have" >&2
+exit 1

@@ -281,3 +281,16 @@ chmod +x "${HOME}/.local/bin/claude-tmux" "${HOME}/.local/bin/claude-wt"
 mkdir -p "${HOME}/.config"
 
 cp claude-tmux.conf "${HOME}/.config/claude-tmux.conf"
+
+# Mail: gmail synced into ~/.mail/gmail by mbsync, indexed by mu, read in mu4e;
+# see README.md for the app password and the first sync
+
+sudo apt-get install --assume-yes isync maildir-utils mu4e
+
+cp authinfo-pass "${HOME}/.local/bin/"
+
+chmod +x "${HOME}/.local/bin/authinfo-pass"
+
+cp mbsyncrc "${HOME}/.mbsyncrc"
+
+mkdir -p "${HOME}/.mail/gmail"

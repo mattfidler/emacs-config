@@ -413,42 +413,81 @@
   (define-key ergoemacs-user-keymap (kbd "<apps> k") 'transient-apps)
   (define-key ergoemacs-user-keymap (kbd "<menu> k") 'transient-apps))
 
-(when (file-exists-p "/usr/local/share/emacs/site-lisp/mu4e")
-  (add-to-list 'load-path "/usr/local/share/emacs/site-lisp/mu4e")
-  (require 'mu4e)
-  (setq mu4e-maildir "~/.mail/gmail"
-        message-send-mail-function 'smtpmail-send-it
-        message-citation-line-format "On %a, %b %d %Y, %f wrote:\n"
-        message-kill-buffer-on-exit t
-        mu4e-use-fancy-chars t
-        mu4e-view-prefer-html t
-        mu4e-view-show-images t
-        mu4e-view-show-addresses t
-        mu4e-view-image-max-width 800
-        mu4e-attachment-dir "~/Downloads"
+;;; Mail: gmail as a maildir.
+;;
+;; mbsync (~/.mbsyncrc) keeps ~/.mail/gmail in step with gmail, mu indexes it
+;; and mu4e reads it, so mail is searchable and readable with no network.  The
+;; app password lives in ~/.authinfo.gpg and nowhere else: mbsync asks
+;; ~/.local/bin/authinfo-pass for it, Emacs asks auth-source for it.  README.md
+;; has the install and the first sync.
+;;
+;; mu4e ships with mu, so it is wherever the mu indexing the mail came from: a
+;; build of your own puts it in /usr/local/share/emacs/site-lisp/mu4e, while the
+;; ubuntu package hands it to dh-elpa, which byte-compiles it into site-lisp/elpa
+;; for each *packaged* Emacs -- and this Emacs, built into /usr/local, is not one
+;; of those, so the only copy is the source in site-lisp/elpa-src.  Take whichever
+;; exists.  Where there is no mu there is no mail, and this whole block sits out.
+
+(let ((dir (seq-find
+            (lambda (d) (file-exists-p (expand-file-name "mu4e.el" d)))
+            (append '("/usr/local/share/emacs/site-lisp/mu4e")
+                    (file-expand-wildcards "/usr/share/emacs/site-lisp/elpa/mu4e-*")
+                    (file-expand-wildcards "/usr/share/emacs/site-lisp/elpa-src/mu4e-*")))))
+  (when dir
+    (add-to-list 'load-path dir)))
+
+(when (and (executable-find "mu") (require 'mu4e nil t))
+  (setq user-full-name "Matthew L. Fidler"
+        user-mail-address "matthew.fidler@gmail.com"
+
+        ;; Folder names are the local ones from ~/.mbsyncrc, not gmail's own
+        ;; bracketed ones.
+        mu4e-sent-folder "/Sent"
+        mu4e-drafts-folder "/Drafts"
+        mu4e-trash-folder "/Trash"
+        ;; Leaving the inbox is what archiving is on gmail, and the delete mark
+        ;; (D) does exactly that: the message goes out of Inbox and stays in All
+        ;; Mail.  Refile has nowhere local to go while All Mail is not synced,
+        ;; so keep it in the inbox rather than have it invent a folder mbsync
+        ;; will never look at.
+        mu4e-refile-folder "/Inbox"
+        ;; mbsync must be free to rename a file when flags change.
         mu4e-change-filenames-when-moving t
-        mu4e-compose-signature-auto-include nil
-        mu4e-drafts-folder "/[Gmail].Drafts"
+
         mu4e-get-mail-command "mbsync -a"
-        mu4e-headers-skip-duplicates t
+        mu4e-update-interval 300
         mu4e-index-cleanup t
         mu4e-index-lazy-check nil
+        ;; Gmail hands the same message out under several labels; this was
+        ;; mu4e-headers-skip-duplicates before 1.10 renamed it.
+        mu4e-search-skip-duplicates t
+
+        ;; gmail files a copy of everything sent through its smtp server, so
+        ;; keeping our own would show every sent message twice.
+        mu4e-sent-messages-behavior 'delete
+
+        ;; Jump to a folder with "j" and one of these.
+        mu4e-maildir-shortcuts '((:maildir "/Inbox"   :key ?i)
+                                 (:maildir "/Sent"    :key ?s)
+                                 (:maildir "/Drafts"  :key ?d)
+                                 (:maildir "/Trash"   :key ?t)
+                                 (:maildir "/Starred" :key ?*))
+
+        mu4e-attachment-dir "~/Downloads"
+        mu4e-use-fancy-chars t
+        mu4e-compose-signature-auto-include nil
+        mu4e-confirm-quit nil
+
+        message-send-mail-function 'smtpmail-send-it
         message-sendmail-envelope-from 'header
-        smtpmail-smtp-service 587
-        mu4e-refile-folder "/[Gmail].All Mail"
-        mu4e-sent-folder "/[Gmail].Sent Mail"
-        mu4e-trash-folder "/[Gmail].Trash"
-        mu4e-update-interval (* 6 60 60)
-        mu4e-update-interval 300
-        mu4e-view-show-addresses t
-        mu4e-view-show-images t
+        message-citation-line-format "On %a, %b %d %Y, %f wrote:\n"
+        message-kill-buffer-on-exit t
         smtpmail-smtp-server "smtp.gmail.com"
         smtpmail-smtp-service 587
         smtpmail-stream-type 'starttls
-        user-full-name "Matthew L. Fidler"
-        user-mail-address "matthew.fidler@gmail.com"
         smtpmail-smtp-user "matthew.fidler@gmail.com")
-  (ergoemacs-define-key ergoemacs-override-keymap (kbd "<apps>")  'mu4e (kbd "p")))
+
+  (ergoemacs-define-key ergoemacs-override-keymap (kbd "<apps>") 'mu4e (kbd "p")))
 
 
 (use-package ergoemacs-mode

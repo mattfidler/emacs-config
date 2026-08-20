@@ -1,0 +1,81 @@
+# ~/.mbsyncrc -- pull gmail down into ~/.mail/gmail, where mu indexes it and
+# mu4e reads it.  Installed by setup.sh; see README.md.
+#
+# The password is the account's app password, read out of ~/.authinfo.gpg by
+# ~/.local/bin/authinfo-pass -- the same entry Emacs uses to send mail, so
+# there is only ever one copy of it.
+#
+# [Gmail]/All Mail is deliberately not synced: it holds a copy of every message
+# ever received, and the point of this file is a small local mailbox.  Mail
+# still gets archived -- see README.md.
+
+IMAPAccount gmail
+Host imap.gmail.com
+Port 993
+User matthew.fidler@gmail.com
+PassCmd "$HOME/.local/bin/authinfo-pass imap.gmail.com smtp.gmail.com"
+# isync 1.5 renames this one to TLSType; 1.4, which is what ubuntu ships, only
+# knows SSLType and stops with "keyword is not recognized" on the new name.
+SSLType IMAPS
+CertificateFile /etc/ssl/certs/ca-certificates.crt
+# Gmail is happy with a deep pipeline and it makes the first sync much quicker.
+PipelineDepth 50
+
+IMAPStore gmail-remote
+Account gmail
+
+MaildirStore gmail-local
+Path ~/.mail/gmail/
+Inbox ~/.mail/gmail/Inbox
+SubFolders Verbatim
+
+# One channel per folder, so the gmail names with their brackets and spaces stay
+# on gmail's side and the local maildir gets plain ones.
+
+Channel gmail-inbox
+Far :gmail-remote:INBOX
+Near :gmail-local:Inbox
+Create Both
+Expunge Both
+CopyArrivalDate yes
+SyncState *
+
+Channel gmail-sent
+Far :gmail-remote:"[Gmail]/Sent Mail"
+Near :gmail-local:Sent
+Create Both
+Expunge Both
+CopyArrivalDate yes
+SyncState *
+
+Channel gmail-drafts
+Far :gmail-remote:"[Gmail]/Drafts"
+Near :gmail-local:Drafts
+Create Both
+Expunge Both
+CopyArrivalDate yes
+SyncState *
+
+Channel gmail-trash
+Far :gmail-remote:"[Gmail]/Trash"
+Near :gmail-local:Trash
+Create Both
+Expunge Both
+CopyArrivalDate yes
+SyncState *
+
+Channel gmail-starred
+Far :gmail-remote:"[Gmail]/Starred"
+Near :gmail-local:Starred
+Create Both
+Expunge Both
+CopyArrivalDate yes
+SyncState *
+
+# "mbsync -a" syncs this group, which is what mu4e runs.
+Group gmail
+Channel gmail-inbox
+Channel gmail-sent
+Channel gmail-drafts
+Channel gmail-trash
+Channel gmail-starred
