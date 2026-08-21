@@ -314,4 +314,15 @@ chmod +x "${HOME}/.local/bin/authinfo-pass"
 
 cp mbsyncrc "${HOME}/.mbsyncrc"
 
+# Keep the key passphrase cached for a working day, so the five-minute mbsync
+# behind mu4e does not put a pinentry prompt on screen every hour.
+
+mkdir -p "${HOME}/.gnupg"
+
+chmod 700 "${HOME}/.gnupg"
+
+install -m 600 gpg-agent.conf "${HOME}/.gnupg/gpg-agent.conf"
+
+gpg-connect-agent reloadagent /bye
+
 mkdir -p "${HOME}/.mail/gmail"

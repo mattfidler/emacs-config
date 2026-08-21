@@ -17,6 +17,16 @@ straight to gmail's smtp server.
 | --- | --- | --- |
 | `mbsyncrc` | `~/.mbsyncrc` | which gmail folders to sync, and where to put them |
 | `authinfo-pass` | `~/.local/bin/authinfo-pass` | prints a password from `~/.authinfo.gpg`, so mbsync and Emacs share one copy of it |
+| `gpg-agent.conf` | `~/.gnupg/gpg-agent.conf` | caches the key passphrase for a working day, so background syncs do not keep asking |
+
+mu4e runs `mbsync -a` every five minutes, mbsync asks `authinfo-pass` for the
+app password, and `authinfo-pass` has to decrypt `~/.authinfo.gpg` to answer it.
+On gpg's defaults -- ten minutes of cache, two hours at the outside -- that puts
+a pinentry prompt on screen about once an hour, for mail arriving in the
+background.  `gpg-agent.conf` sets both to eight hours, so it asks once a
+working day; the trade is that the passphrase sits in gpg-agent's memory that
+long.  Nothing prompts until the first decryption of a session, so the first
+`mbsync` after a reboot is where it asks.
 
 The account needs an **app password** -- gmail refuses a plain account password
 over IMAP.  Make one at <https://myaccount.google.com/apppasswords> (the account
