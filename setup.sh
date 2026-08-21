@@ -55,6 +55,9 @@ make
 sudo make install
 
 # without sudo call
+mkdir -p "${HOME}/.config/systemd/user"
+install -m 644 "${HOME}/src/emacs-config/emacs.service" "${HOME}/.config/systemd/user/emacs.service"
+systemctl --user daemon-reload
 systemctl enable --user emacs
 systemctl start --user emacs
 

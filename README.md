@@ -301,6 +301,7 @@ running one already has.  So `emacs` in bash is a client of the daemon:
 | file | goes to | what it does |
 | --- | --- | --- |
 | `bash-emacs.sh` | `~/.config/bash-emacs.sh` | makes `emacs` an `emacsclient`, sourced from `~/.bashrc` |
+| `emacs.service` | `~/.config/systemd/user/emacs.service` | the `systemd --user` unit `emacs --daemon` runs under |
 | `emacsreset` | `~/.local/bin/emacsreset` | stops the daemon, so the next `emacs` starts a fresh one |
 
 `emacs` opens a graphical frame where there is a display to put one on and a
@@ -310,6 +311,29 @@ manages it, so it is supervised the same way either way.  The calls a client
 cannot serve are handed to the real binary untouched: `--batch`, `--script`, `-Q`
 and `-q` have no init to share, and `--daemon` is what we would be connecting to.
 So `emacs --batch` in a script still starts its own Emacs, as it must.
+
+### A graphical frame over `ssh -X`
+
+A client picks `-c` over `-t` whenever `$DISPLAY` or `$WAYLAND_DISPLAY` is set,
+which is true of an `ssh -X`/MobaXterm session too -- but the daemon itself,
+not the client, is what actually has to authenticate to that display, and it
+only had one `XAUTHORITY` to try.  `systemd --user` imports the graphical
+session's own into every unit by default, which points at the Xwayland cookie
+file for the *local* display and has no entry for a forwarded one; `ssh -X`
+writes its cookie to the ordinary `~/.Xauthority` instead.  A daemon that only
+knows the first can't open the second: `x-open-connection` failed with
+"Display ... can't be opened", and `server-create-window-system-frame` in
+server.el swallows exactly that error and falls back to a *tty* frame in the
+client's terminal without saying why -- which is what made this look like
+`emacs` was choosing the console on its own.
+
+`emacs.service` points `XAUTHORITY` at `~/.Xauthority` instead, so it is the
+one file the daemon ever authenticates through, and `_emacs_merge_xauth` (in
+`bash-emacs.sh`, run every time `emacs` needs the daemon) merges the local
+Xwayland cookie into it -- needed because Wayland hands out a fresh, randomly
+named cookie file every graphical login, so the merge has to happen again each
+time rather than once. `ssh -X` already writes straight into `~/.Xauthority`,
+so a forwarded session needs no merge at all.
 
 `emacsreset` is how a change to `emacs-config.el` gets picked up.  The daemon
 holds the config it was started with for as long as it runs, which is why a

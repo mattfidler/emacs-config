@@ -1,0 +1,21 @@
+[Unit]
+Description=Emacs text editor
+Documentation=info:emacs man:emacs(1) https://gnu.org/software/emacs/
+
+[Service]
+Type=forking
+ExecStart=/usr/local/bin/emacs --daemon
+ExecStop=/usr/local/bin/emacsclient --eval "(kill-emacs)"
+Environment=SSH_AUTH_SOCK=%t/keyring/ssh
+# The graphical session imports its own XAUTHORITY (the Wayland/Xwayland
+# cookie file) into every systemd --user service by default, which has no
+# entry for X11-forwarded ssh sessions -- those cookies live in the default
+# ~/.Xauthority instead, so a client connecting over a forwarded display got
+# "Display ... can't be opened" and silently fell back to a tty frame.
+# ~/.Xauthority is kept merged with the local cookie too (see
+# _emacs_ensure_daemon in bash-emacs.sh), so pointing here covers both.
+Environment=XAUTHORITY=%h/.Xauthority
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

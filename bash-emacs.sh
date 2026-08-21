@@ -15,8 +15,23 @@
 # emacsreset (~/.local/bin/emacsreset) stops the daemon; the next `emacs' starts
 # a fresh one.
 
+# The daemon reads only ~/.Xauthority (see emacs.service) so that a client on
+# any display -- local or ssh -X forwarded -- can authenticate to it.  An ssh
+# session's cookie already lands there by itself, but a local graphical login
+# gets its own, differently-named Xwayland/X auth file instead, which the
+# daemon never sees; merge it in so a local `emacsclient -c' still works.
+# Cheap and idempotent, so it is fine to run on every shell that has one.
+_emacs_merge_xauth() {
+    local xauth_file="${XAUTHORITY:-$HOME/.Xauthority}"
+    [ "$xauth_file" = "$HOME/.Xauthority" ] && return 0
+    [ -r "$xauth_file" ] || return 0
+    command -v xauth >/dev/null 2>&1 || return 0
+    xauth -f "$HOME/.Xauthority" merge "$xauth_file" >/dev/null 2>&1
+}
+
 # Bring the daemon up if it is not already answering.  Prints nothing on the way.
 _emacs_ensure_daemon() {
+    _emacs_merge_xauth
     emacsclient --suppress-output --eval t >/dev/null 2>&1 && return 0
 
     if systemctl --user list-unit-files emacs.service >/dev/null 2>&1; then
