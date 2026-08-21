@@ -1233,37 +1233,17 @@
   (load "~/emacs-config/clearcase"))
 
 
-;; Dark is for remote sessions, light is for local sessions.
-(when nvs
-  (if (daemonp)
-      (add-hook 'after-make-frame-functions
-                (defun my/theme-init-daemon (frame)
-                  (with-selected-frame frame
-                    (load-theme 'zenburn t))
-                  ;; Run this hook only once.
-                  (remove-hook 'after-make-frame-functions
-                               #'my/theme-init-daemon)
-                  (fmakunbound 'my/theme-init-daemon)))
-    (load-theme 'zenburn t)))
-
-;; For the daemon it has emacs' original environtmental variables so
-;; this does not work
-(when (and (not nvs)
-           (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT")))
+;; Always solarized-dark, regardless of where this frame was opened from.
+(if (daemonp)
+    (add-hook 'after-make-frame-functions
+              (defun my/theme-init-daemon (frame)
+                (with-selected-frame frame
+                  (load-theme 'solarized-dark t))
+                ;; Run this hook only once.
+                (remove-hook 'after-make-frame-functions
+                             #'my/theme-init-daemon)
+                (fmakunbound 'my/theme-init-daemon)))
   (load-theme 'solarized-dark t))
-
-(when (and (not nvs)
-           (not (or (getenv "SSH_CONNECTION") (getenv "SSH_CLIENT"))))
-  (if (daemonp)
-      (add-hook 'after-make-frame-functions
-                (defun my/theme-init-daemon (frame)
-                  (with-selected-frame frame
-                    (load-theme 'solarized-light t))
-                  ;; Run this hook only once.
-                  (remove-hook 'after-make-frame-functions
-                               #'my/theme-init-daemon)
-                  (fmakunbound 'my/theme-init-daemon)))
-    (load-theme 'solarized-light t)))
 
 (defun my/send-apps-key ()
   "Send apps key"
