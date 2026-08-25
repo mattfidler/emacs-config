@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# ai-pr -- check a pull request out into a worktree of its own, and set an agent
+# loose in it.
+#
+# `claude-pr 1290' puts pull request 1290 of the current repository in
+# ~/src/<repo>-pr1290 and runs claude there, so the agent can read, build, commit
+# and push the branch without touching the checkout you are reading.  `agy-pr'
+# does the same with antigravity.  Like ai-tmux and ai-wt, one copy serves every
+# agent and works out which one it is from the name it was called by.
+#
+# The worktree is a flat sibling of the repository even when this is run from
+# inside another worktree, and running it again for the same pull request
+# re-enters it -- which, since the agents run under tmux, re-attaches to the
+# conversation already living there.
+#
+# With no argument it lists the open pull requests and asks which.
+#
+# Usage: claude-pr [PR] [agent args...]
+#        agy-pr [PR] [agent args...]
+
+set -uo pipefail
+
+tool=$(basename -- "$0")
+tool=${tool%-pr}
+case $tool in
+    ''|ai) tool=${AI_TMUX_TOOL:-claude} ;;
+    agy)   tool=antigravity ;;
+esac
+
+die() { printf '%s-pr: %s\n' "$tool" "$*" >&2; exit 1; }
+
+command -v gh >/dev/null 2>&1 ||
+    die "gh is not installed; it is what knows how to fetch a pull request"
+
+git rev-parse --show-toplevel >/dev/null 2>&1 ||
+    die "not inside a git repository"
+
+# The main worktree rather than whichever one we are standing in, so pull
+# request worktrees stay flat siblings of the repository instead of nesting.
+root=$(dirname -- "$(git rev-parse --path-format=absolute --git-common-dir)")
+
+pr=${1-}
+if [ $# -gt 0 ]; then
+    shift
+else
+    printf 'Open pull requests:\n' >&2
+    gh pr list --limit 30 >&2 2>/dev/null || true
+    # Prefer /dev/tty over stdin: this may be started from a pipe.
+    [ -t 0 ] || { exec </dev/tty; } 2>/dev/null
+    read -r -p "Pull request: " pr || die "no pull request given"
+fi
+
+# Take a number, a #number, or the URL of one.
+pr=${pr##*/}
+pr=${pr#\#}
+case $pr in
+    ''|*[!0-9]*) die "not a pull request number: ${pr:-(none)}" ;;
+esac
+
+worktree="$(dirname -- "$root")/$(basename -- "$root")-pr$pr"
+
+if [ -e "$worktree" ]; then
+    [ -d "$worktree" ] || die "$worktree exists and is not a directory"
+    printf 'Re-using existing worktree %s\n' "$worktree"
+else
+    # Add the worktree detached first, then let gh do the checkout in it: gh
+    # knows how to reach a pull request from a fork, and how to set the branch
+    # up so that pushing it goes back to the right place.
+    git -C "$root" worktree add --detach -- "$worktree" HEAD || exit
+    if ! (cd "$worktree" && gh pr checkout "$pr"); then
+        git -C "$root" worktree remove --force -- "$worktree" 2>/dev/null
+        die "could not check out pull request $pr"
+    fi
+fi
+
+cd "$worktree" || die "cannot enter $worktree"
+
+# <agent>-tmux keeps the conversation alive across Emacs restarts and dropped
+# ssh connections; fall back to the bare agent when it is not installed.
+program=$tool-tmux
+if ! command -v "$program" >/dev/null 2>&1; then
+    case $tool in
+        antigravity) program=agy ;;
+        *)           program=$tool ;;
+    esac
+fi
+
+exec "$program" "$@"

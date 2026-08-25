@@ -26,6 +26,7 @@ tool=$(basename -- "$0")
 tool=${tool%-tmux}
 case $tool in
     ''|ai) tool=${AI_TMUX_TOOL:-claude} ;;
+    agy)   tool=antigravity ;;
 esac
 
 case $tool in

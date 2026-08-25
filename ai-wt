@@ -21,6 +21,7 @@ tool=$(basename -- "$0")
 tool=${tool%-wt}
 case $tool in
     ''|ai) tool=${AI_TMUX_TOOL:-claude} ;;
+    agy)   tool=antigravity ;;
 esac
 
 die() { printf '%s-wt: %s\n' "$tool" "$*" >&2; exit 1; }

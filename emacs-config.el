@@ -1979,6 +1979,92 @@ session already living there."
       (ai-wt--git root "worktree" "add" "-b" name "--" worktree "HEAD")))
     (file-name-as-directory worktree)))
 
+(defun ai-pr--root ()
+  "The main worktree of this repository, not whichever one point is in.
+
+Pull request worktrees are cut beside the repository, so they stay flat
+siblings in ~/src even when this is asked for from inside another one."
+  (file-name-as-directory
+   (directory-file-name
+    (file-name-directory
+     (ai-wt--git default-directory "rev-parse" "--path-format=absolute"
+                 "--git-common-dir")))))
+
+(defun ai-pr--open ()
+  "The repository's open pull requests, as (NUMBER AUTHOR TITLE), newest first."
+  (let ((default-directory (ai-pr--root)))
+    (mapcar (lambda (line) (split-string line "\t"))
+            (split-string
+             (shell-command-to-string
+              (concat "gh pr list --limit 50 "
+                      "--json number,author,title "
+                      "--jq '.[] | \"\\(.number)\\t\\(.author.login)\\t\\(.title)\"' "
+                      "2>/dev/null"))
+             "\n" t))))
+
+(defun ai-pr--read (prompt)
+  "Read one of this repository's open pull requests with PROMPT.
+
+Returns the number as a string.  Anything that is not a number is taken
+as one anyway, so a pull request that `gh' did not list -- a closed one,
+or one in a repository it cannot reach -- can still be typed in."
+  (let* ((pulls (ai-pr--open))
+         (width (apply #'max 1 (mapcar (lambda (p) (length (car p))) pulls)))
+         (table
+          (lambda (string pred action)
+            (if (eq action 'metadata)
+                `(metadata
+                  (category . ai-pull-request)
+                  ;; gh hands them over newest first; keep that.
+                  (display-sort-function . identity)
+                  (cycle-sort-function . identity)
+                  (annotation-function
+                   . ,(lambda (cand)
+                        (let ((pull (assoc cand pulls)))
+                          (concat (make-string (1+ (- width (length cand))) ?\s)
+                                  (propertize (or (nth 2 pull) "")
+                                              'face 'completions-annotations)
+                                  (and (nth 1 pull)
+                                       (concat "  " (nth 1 pull))))))))
+              (complete-with-action action pulls string pred)))))
+    (string-trim (completing-read prompt table nil nil))))
+
+(defun ai-pr--worktree (pr)
+  "Return a worktree of this repository holding pull request PR, making it if needed.
+
+The branch is checked out by `gh', which knows how to reach a pull
+request from a fork and how to set the branch up so that pushing it goes
+back to the right place.  An existing worktree is re-entered -- which,
+since the agents run under tmux, re-attaches to the conversation already
+living there."
+  ;; A number, a #number, or the URL of one.  Stripped in that order rather
+  ;; than as one alternation: the leading-# branch matches the empty string,
+  ;; and a zero-width match at position 0 leaves the first character behind.
+  (let* ((pr (string-trim pr))
+         (pr (replace-regexp-in-string "\\`.*/" "" pr))
+         (pr (replace-regexp-in-string "\\`#+" "" pr))
+         (_ (unless (string-match-p "\\`[0-9]+\\'" pr)
+              (user-error "Not a pull request number: %s" pr)))
+         (root (directory-file-name (ai-pr--root)))
+         (worktree (expand-file-name
+                    (format "%s-pr%s" (file-name-nondirectory root) pr)
+                    (file-name-directory root))))
+    (cond
+     ((file-directory-p worktree)
+      (message "Re-using existing worktree %s" worktree))
+     ((file-exists-p worktree)
+      (user-error "%s exists and is not a directory" worktree))
+     (t
+      (unless (executable-find "gh")
+        (user-error "gh is not installed; it is what fetches a pull request"))
+      (ai-wt--git root "worktree" "add" "--detach" "--" worktree "HEAD")
+      (let ((default-directory (file-name-as-directory worktree)))
+        (unless (eq 0 (call-process "gh" nil nil nil "pr" "checkout" pr))
+          ;; Leave nothing behind when the checkout fails.
+          (ai-wt--git root "worktree" "remove" "--force" "--" worktree)
+          (user-error "Could not check out pull request %s" pr)))))
+    (file-name-as-directory worktree)))
+
 ;;;; Claude
 
 (defun claude-code-theme-environment (&rest _)
@@ -2094,6 +2180,15 @@ keeps running so it can be re-attached.  Use this to actually stop it."
 See `ai-wt--worktree' for how the worktree and its branch are chosen."
   (interactive (list (read-string "Worktree/branch name: ")))
   (claude-code--start-in (ai-wt--worktree name)))
+
+(defun claude-pr (pr)
+  "Start Claude on pull request PR of this repository, in a worktree of its own.
+
+The pull request is checked out in ~/src/<repo>-pr<PR>, so Claude can
+read, build, commit and push the branch while the checkout being read
+stays as it was.  See `ai-pr--worktree'."
+  (interactive (list (ai-pr--read "Claude on pull request: ")))
+  (claude-code--start-in (ai-pr--worktree pr)))
 
 ;;;; Antigravity
 ;;
@@ -2257,6 +2352,13 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   (interactive (list (read-string "Worktree/branch name: ")))
   (pop-to-buffer (antigravity--start (ai-wt--worktree name))))
 
+(defun agy-pr (pr)
+  "Start Antigravity on pull request PR of this repository, in its own worktree.
+
+`claude-pr' for the other agent; see `ai-pr--worktree'."
+  (interactive (list (ai-pr--read "Antigravity on pull request: ")))
+  (pop-to-buffer (antigravity--start (ai-pr--worktree pr))))
+
 ;;;; One key for all of it
 ;;
 ;; The three things worth doing with an agent depend entirely on where you are
@@ -2351,6 +2453,9 @@ one being read.  See `ai-dwim'."
     (define-key map "s" #'antigravity-tmux-switch)
     (define-key map "k" #'antigravity-tmux-kill)
     (define-key map "w" #'antigravity-wt)
+    ;; A pull request, in a worktree of its own.
+    (define-key map "p" #'claude-pr)
+    (define-key map "P" #'agy-pr)
     map)
   "Keymap for the coding-agent commands, bound to \\`C-c a'.")
 

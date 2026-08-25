@@ -279,12 +279,13 @@ cp ccache "${HOME}/.ccache/ccache.conf"
 
 mkdir -p "${HOME}/.local/bin"
 
-install -m 755 ai-tmux ai-wt "${HOME}/.local/bin/"
+install -m 755 ai-tmux ai-wt ai-pr "${HOME}/.local/bin/"
 
-ln -sfn ai-tmux "${HOME}/.local/bin/claude-tmux"
-ln -sfn ai-tmux "${HOME}/.local/bin/antigravity-tmux"
-ln -sfn ai-wt   "${HOME}/.local/bin/claude-wt"
-ln -sfn ai-wt   "${HOME}/.local/bin/antigravity-wt"
+for agent in claude antigravity agy; do
+    ln -sfn ai-tmux "${HOME}/.local/bin/${agent}-tmux"
+    ln -sfn ai-wt   "${HOME}/.local/bin/${agent}-wt"
+    ln -sfn ai-pr   "${HOME}/.local/bin/${agent}-pr"
+done
 
 mkdir -p "${HOME}/.config"
 

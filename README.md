@@ -128,7 +128,7 @@ dropped ssh connection or an Emacs restart.
 | Claude Code | `claude` | `claude-code.el` | `tmux -L claude` |
 | Antigravity | `agy` | `emacs-config.el` | `tmux -L antigravity` |
 
-Three files make that work, and each one serves both agents: they work out which
+Four files make that work, and each one serves both agents: they work out which
 agent they are from the name they were called by, so they are installed once and
 linked under one name per agent.
 
@@ -137,16 +137,18 @@ linked under one name per agent.
 | `ai-tmux` | `~/.local/bin/{claude,antigravity}-tmux` | starts (or re-attaches to) one tmux session per directory on that agent's private tmux server |
 | `ai-tmux.conf` | `~/.config/ai-tmux.conf` | those servers' configuration: no prefix, no status line, no keys of their own |
 | `ai-wt` | `~/.local/bin/{claude,antigravity}-wt` | starts an agent on a fresh git worktree of the current repository |
+| `ai-pr` | `~/.local/bin/{claude,antigravity}-pr` | checks a pull request out into a worktree of its own and starts an agent in it |
 
-`setup.sh` installs all three.  On a machine that already has them:
+`setup.sh` installs all four.  On a machine that already has them:
 
 ```sh
 cd ~/src/emacs-config
-install -m 755 ai-tmux ai-wt ~/.local/bin/
-ln -sfn ai-tmux ~/.local/bin/claude-tmux
-ln -sfn ai-tmux ~/.local/bin/antigravity-tmux
-ln -sfn ai-wt   ~/.local/bin/claude-wt
-ln -sfn ai-wt   ~/.local/bin/antigravity-wt
+install -m 755 ai-tmux ai-wt ai-pr ~/.local/bin/
+for agent in claude antigravity agy; do
+  ln -sfn ai-tmux ~/.local/bin/$agent-tmux
+  ln -sfn ai-wt   ~/.local/bin/$agent-wt
+  ln -sfn ai-pr   ~/.local/bin/$agent-pr
+done
 install -m 644 ai-tmux.conf ~/.config/ai-tmux.conf
 install -m 755 emacsreset ~/.local/bin/
 install -m 644 bash-emacs.sh ~/.config/bash-emacs.sh
@@ -228,6 +230,7 @@ so no map, and borrows `C-c a`:
 | attach to a background tmux session | `M-x claude-tmux-switch` | `C-c a s` |
 | end a background tmux session | `M-x claude-tmux-kill` | `C-c a k` |
 | start on a fresh git worktree | `M-x claude-wt` | `C-c a w` |
+| work on a pull request | `C-c a p` | `C-c a P` |
 
 `ai-tmux-agents` is the list all of this walks: each entry pairs an agent's tmux
 server with the function that shows one of its sessions, so a third agent is one
@@ -239,6 +242,24 @@ Everything that is not particular to one agent is shared in `emacs-config.el`:
 agent's commands are a few lines on top.  Antigravity needs no package of its
 own: `antigravity--start` is an `eat-make` of `antigravity-tmux` in the project
 root, set up like the claude buffers.
+
+### Pull requests
+
+`C-c a p` (`claude-pr`) and `C-c a P` (`agy-pr`) put a pull request in a worktree
+of its own and set the agent loose in it.  `gh` does the checkout, so a pull
+request from a fork works and the branch is set up to push back to the right
+place; the agent can read, build, commit and push it while the checkout you are
+reading stays as you left it.
+
+Asking with no argument completes over the repository's open pull requests,
+newest first, annotated with the title and who opened it; a number, a `#number`
+or the URL of one all work, so a closed pull request can still be typed in.  The
+worktree is `~/src/<repo>-pr<N>` -- a flat sibling of the repository even when
+asked for from inside another worktree -- and asking again for the same one
+re-enters it, which re-attaches to the conversation already living there.
+
+`agy` works as a name for antigravity throughout: `agy-pr`, `agy-wt` and
+`agy-tmux` are the same scripts as the `antigravity-` ones.
 
 ### Copying out of an agent
 
