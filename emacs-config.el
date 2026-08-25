@@ -340,6 +340,29 @@
 
 (define-key ergoemacs-user-keymap (kbd "C-p") 'projectile-command-map)
 
+;;; Reaching a command from the menu key.
+;;
+;; `ergoemacs-define-key' translates the key it is given from a us layout to
+;; this one, and `ergoemacs-override-keymap' is ergoemacs-mode's own map, which
+;; it rewrites whenever it installs a theme.  Both of those bit the two bindings
+;; below.  Passing <apps> as the key and the letter as EXTRA-KEYS translates
+;; <apps> to <menu> and appends the letter untranslated, so `<apps> p' asked for
+;; <menu> p -- and ergoemacs's reduction theme binds `<apps> r' to `goto-map',
+;; which on colemak translates to that very key.  Same map, same sequence, and
+;; the theme is written last, so mu4e lost and <apps> p ran goto-map.
+;;
+;; So bind the way `transient-apps' below is bound and has always worked: a
+;; plain `define-key' of the literal sequence, in `ergoemacs-user-keymap', which
+;; is the user's own map and outranks the override one.  Both spellings of the
+;; key, since X sends <menu> and Windows sends <apps>.
+
+(defun my-define-menu-key (letter command)
+  "Bind the menu key followed by LETTER to COMMAND, however the key arrives."
+  (define-key ergoemacs-user-keymap (kbd (concat "<apps> " letter)) command)
+  (define-key ergoemacs-user-keymap (kbd (concat "<menu> " letter)) command))
+
+
+
 (use-package treemacs
   :ensure t
   :config
@@ -383,7 +406,7 @@
   (setq treemacs-recenter-after-file-follow 'on-distance)
   (setq treemacs-recenter-after-tag-follow 'on-distance)
   (setq treemacs-show-hidden-files t)
-  (ergoemacs-define-key ergoemacs-override-keymap (kbd "<apps>")  'treemacs (kbd "q")))
+  (my-define-menu-key "q" #'treemacs))
 
 (use-package powershell)
 
@@ -490,7 +513,7 @@
         smtpmail-stream-type 'starttls
         smtpmail-smtp-user "matthew.fidler@gmail.com")
 
-  (ergoemacs-define-key ergoemacs-override-keymap (kbd "<apps>") 'mu4e (kbd "p")))
+  (my-define-menu-key "p" #'mu4e))
 
 
 (use-package ergoemacs-mode
