@@ -5,18 +5,22 @@
 # `claude-pr 1290' puts pull request 1290 of the current repository in
 # ~/src/<repo>-pr1290 and runs claude there, so the agent can read, build, commit
 # and push the branch without touching the checkout you are reading.  `agy-pr'
-# does the same with antigravity.  Like ai-tmux and ai-wt, one copy serves every
-# agent and works out which one it is from the name it was called by.
+# and `copilot-pr' do the same with antigravity and Copilot.  Like ai-tmux and
+# ai-wt, one copy serves every agent and works out which one it is from the name
+# it was called by.
 #
 # The worktree is a flat sibling of the repository even when this is run from
 # inside another worktree, and running it again for the same pull request
 # re-enters it -- which, since the agents run under tmux, re-attaches to the
-# conversation already living there.
+# conversation already living there.  Unless agent args are given: ai-tmux
+# starts a session of its own for those rather than let the running one
+# swallow them.
 #
 # With no argument it lists the open pull requests and asks which.
 #
 # Usage: claude-pr [PR] [agent args...]
 #        agy-pr [PR] [agent args...]
+#        copilot-pr [PR] [agent args...]
 
 set -uo pipefail
 

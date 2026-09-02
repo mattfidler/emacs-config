@@ -432,6 +432,7 @@
      ;; <apps> k h: the agent for wherever point is -- see `claude-dwim'.
      ("h" "claude" claude-dwim)
      ("H" "antigravity" agy-dwim)
+     ("C" "copilot" copilot-cli-dwim)
      ])
   ;;(define-key ergoemacs-override-keymap (kbd "<menu> k") nil)
   ;;(define-key ergoemacs-override-keymap (kbd "<apps> k") nil)
@@ -1630,9 +1631,112 @@ belongs to without having to load claude-code.el to ask."
   "Whether this Emacs is a light or a dark one, as an agent theme name."
   (if (eq (frame-parameter nil 'background-mode) 'dark) "dark" "light"))
 
+;;;; A terminal for an agent that has no Emacs package
+;;
+;; claude-code.el is all of this for Claude.  Antigravity and Copilot have no
+;; package, and want the same few things: name a buffer after the directory the
+;; agent works in, find the ones already running, and start another on that
+;; agent's <agent>-tmux.  So here they are once, taking the agent as an
+;; argument, and each agent's own commands are a line apiece on top.
+
+(defun ai-term--buffer-name (agent directory &optional instance)
+  "Name of the AGENT buffer working in DIRECTORY.
+INSTANCE distinguishes a second agent started in the same directory."
+  ;; Always a directory name, trailing slash and all, so a buffer is found
+  ;; again whether the caller had one or not -- and so the names read the same
+  ;; as claude-code.el's.
+  (let ((dir (abbreviate-file-name
+              (file-name-as-directory (file-truename directory)))))
+    (if instance
+        (format "*%s:%s:%s*" agent dir instance)
+      (format "*%s:%s*" agent dir))))
+
+(defun ai-term--buffers-for-directory (agent directory)
+  "Live AGENT terminals working in DIRECTORY."
+  (let ((regexp (concat "\\`"
+                        (regexp-quote
+                         (string-trim-right
+                          (ai-term--buffer-name agent directory) "\\*"))
+                        "\\(?::[^*]+\\)?\\*\\'")))
+    (seq-filter (lambda (buffer)
+                  (and (string-match-p regexp (buffer-name buffer))
+                       (get-buffer-process buffer)))
+                (buffer-list))))
+
+(defun ai-term--all-buffers (agent)
+  "Every live AGENT terminal in this Emacs."
+  (let ((prefix (format "*%s:" agent)))
+    (seq-filter (lambda (buffer)
+                  (and (string-prefix-p prefix (buffer-name buffer))
+                       (get-buffer-process buffer)))
+                (buffer-list))))
+
+(defun ai-term--unused-buffer-name (agent directory)
+  "An AGENT buffer name for DIRECTORY that no buffer has taken."
+  (if (not (get-buffer (ai-term--buffer-name agent directory)))
+      (ai-term--buffer-name agent directory)
+    (let ((n 2))
+      (while (get-buffer (ai-term--buffer-name agent directory
+                                               (number-to-string n)))
+        (setq n (1+ n)))
+      (ai-term--buffer-name agent directory (number-to-string n)))))
+
+(defun ai-term--read-buffer (prompt buffers)
+  "Read one of BUFFERS with PROMPT, or return it when there is only one."
+  (if (cdr buffers)
+      (get-buffer (completing-read prompt (mapcar #'buffer-name buffers) nil t))
+    (car buffers)))
+
+(defun ai-term--start (agent program directory &optional session switches)
+  "Open a terminal on AGENT, running PROGRAM in DIRECTORY, and return its buffer.
+
+PROGRAM is normally the agent's <agent>-tmux, so the conversation lives
+on a detachable tmux session rather than in the buffer.
+
+SESSION names a background tmux session to re-attach to.  Without one,
+<agent>-tmux derives the session from DIRECTORY, so a session already
+running there is re-entered instead of duplicated.
+
+SWITCHES are extra command line arguments for the agent itself, such as
+\"--resume\".  Giving any, and no SESSION, makes <agent>-tmux start a
+session of its own rather than re-enter the one running in DIRECTORY,
+since switches only mean anything to an agent that is starting.  A
+SESSION that already exists is attached to whatever the switches say, so
+they are dropped: ask for one or the other, not both."
+  (require 'eat)
+  (unless (executable-find program)
+    (user-error "%s program `%s' not found in PATH" (capitalize agent) program))
+  (let* ((directory (file-name-as-directory (expand-file-name directory)))
+         (default-directory directory)
+         (name (ai-term--unused-buffer-name agent directory))
+         ;; CLAUDE_TMUX_*, ANTIGRAVITY_TMUX_*, COPILOT_TMUX_*: the same name
+         ;; ai-tmux derives from the agent it was called as.
+         (prefix (upcase (replace-regexp-in-string "-" "_" agent)))
+         ;; Without this the terminal flickers while the agent redraws.
+         (process-adaptive-read-buffering nil)
+         (process-environment
+          (append (list (format "%s_TMUX_THEME=%s" prefix (ai-term--theme)))
+                  (and session
+                       (list (format "%s_TMUX_SESSION=%s" prefix session)))
+                  process-environment))
+         (buffer (apply #'eat-make (string-trim name "\\*" "\\*")
+                        program nil switches)))
+    (with-current-buffer buffer
+      ;; Nothing in here is a shell, and a scroll back through the conversation
+      ;; should not run off the end of what eat kept.
+      (setq-local eat-enable-directory-tracking nil)
+      (setq-local eat-enable-shell-prompt-annotation nil)
+      (setq-local eat-term-scrollback-size nil)
+      ;; The agents wrap code snippets to the width of their terminal, so
+      ;; shrink the text rather than let a narrow window wrap them, exactly as
+      ;; the claude buffers do.
+      (my-eat-fit-columns-mode 1))
+    buffer))
+
 (defvar ai-tmux-agents
   '(("claude" . claude-tmux--attach)
-    ("antigravity" . antigravity-tmux--attach))
+    ("antigravity" . antigravity-tmux--attach)
+    ("copilot" . copilot-cli-tmux--attach))
   "The agents that keep their sessions on a tmux server of their own.
 
 Each element is (SOCKET . ATTACH), where SOCKET names the tmux server --
@@ -2106,15 +2210,30 @@ claude instead of whatever theme was picked last."
   :bind
   (:repeat-map my-claude-code-map ("M" . claude-code-cycle-mode)))
 
-(defun claude-code--start-in (directory &optional session)
+;; `claude-code-program-switches' is claude-code.el's, and is let-bound below
+;; before that package has necessarily been loaded.  Declaring it here keeps the
+;; binding dynamic -- which is what makes it reach the process -- however this
+;; file comes to be evaluated.
+(defvar claude-code-program-switches)
+
+(defun claude-code--start-in (directory &optional session switches)
   "Start Claude working in DIRECTORY, in a new buffer.
 
 SESSION names a background tmux session to re-attach to.  Without one,
 claude-tmux derives the session from DIRECTORY, so a session already
-running there is re-entered instead of duplicated."
+running there is re-entered instead of duplicated.
+
+SWITCHES are extra command line arguments for claude itself, such as
+\"--resume\".  Giving any, and no SESSION, makes claude-tmux start a
+session of its own rather than re-enter the one running in DIRECTORY,
+since switches only mean anything to an agent that is starting.  A
+SESSION that already exists is attached to whatever the switches say, so
+they are dropped: ask for one or the other, not both."
   (require 'claude-code)
   (let* ((start-dir (file-name-as-directory (expand-file-name directory)))
          (default-directory start-dir)
+         (claude-code-program-switches
+          (append claude-code-program-switches switches))
          (process-environment
           (append (and session (list (concat "CLAUDE_TMUX_SESSION=" session)))
                   process-environment)))
@@ -2136,6 +2255,20 @@ ssh connection.  With prefix ARG, always start a new instance."
      ((null buffers) (claude-code '(4)))
      ((= 1 (length buffers)) (pop-to-buffer (car buffers)))
      (t (call-interactively #'claude-code-select-buffer)))))
+
+(defun claude-resume ()
+  "Start Claude on one of this project's past conversations.
+
+`claude --resume': claude lists the conversations it has had in this
+directory and re-opens the one you pick, which is the way back to a
+conversation whose tmux session is gone -- after a reboot, or a
+`claude-tmux-kill'.  Use `claude' for the one running right now.
+
+The resumed conversation gets a tmux session of its own, so the one
+already running here, if any, is left alone."
+  (interactive)
+  (require 'claude-code)
+  (claude-code--start-in (claude-code--directory) nil '("--resume")))
 
 (defun claude-tmux-switch (session)
   "Attach to a background claude tmux SESSION in this Emacs.
@@ -2211,81 +2344,24 @@ the name that makes it run `agy' in a detachable tmux session; set this to
   :type 'string
   :group 'antigravity)
 
-(defun antigravity--buffer-name (directory &optional instance)
-  "Name of the Antigravity buffer working in DIRECTORY.
-INSTANCE distinguishes a second agent started in the same directory."
-  ;; Always a directory name, trailing slash and all, so a buffer is found
-  ;; again whether the caller had one or not -- and so the names read the same
-  ;; as claude-code.el's.
-  (let ((dir (abbreviate-file-name
-              (file-name-as-directory (file-truename directory)))))
-    (if instance
-        (format "*antigravity:%s:%s*" dir instance)
-      (format "*antigravity:%s*" dir))))
+(defcustom antigravity-history-file
+  (expand-file-name "~/.gemini/antigravity-cli/history.jsonl")
+  "Where `agy' writes down what it has been asked, one JSON object a line.
 
-(defun antigravity--buffers-for-directory (directory)
-  "Live Antigravity terminals working in DIRECTORY."
-  (let ((regexp (concat "\\`"
-                        (regexp-quote (string-trim-right
-                                       (antigravity--buffer-name directory) "\\*"))
-                        "\\(?::[^*]+\\)?\\*\\'")))
-    (seq-filter (lambda (buffer)
-                  (and (string-match-p regexp (buffer-name buffer))
-                       (get-buffer-process buffer)))
-                (buffer-list))))
+This is the only list of past conversations there is: the CLI has no
+`claude --resume' of its own, and the summary database beside this file
+stopped being written to.  `antigravity-resume' reads it to offer the
+conversations started at the agy prompt -- which are the ones worth
+resuming, the hundreds of one-shot `agy -p' runs never appearing here."
+  :type 'file
+  :group 'antigravity)
 
-(defun antigravity--all-buffers ()
-  "Every live Antigravity terminal in this Emacs."
-  (seq-filter (lambda (buffer)
-                (and (string-prefix-p "*antigravity:" (buffer-name buffer))
-                     (get-buffer-process buffer)))
-              (buffer-list)))
-
-(defun antigravity--unused-buffer-name (directory)
-  "An Antigravity buffer name for DIRECTORY that no buffer has taken."
-  (if (not (get-buffer (antigravity--buffer-name directory)))
-      (antigravity--buffer-name directory)
-    (let ((n 2))
-      (while (get-buffer (antigravity--buffer-name directory (number-to-string n)))
-        (setq n (1+ n)))
-      (antigravity--buffer-name directory (number-to-string n)))))
-
-(defun antigravity--read-buffer (prompt buffers)
-  "Read one of BUFFERS with PROMPT, or return it when there is only one."
-  (if (cdr buffers)
-      (get-buffer (completing-read prompt (mapcar #'buffer-name buffers) nil t))
-    (car buffers)))
-
-(defun antigravity--start (directory &optional session)
+(defun antigravity--start (directory &optional session switches)
   "Open an Antigravity terminal working in DIRECTORY and return its buffer.
 
-SESSION names a background tmux session to re-attach to.  Without one,
-antigravity-tmux derives the session from DIRECTORY, so a session already
-running there is re-entered instead of duplicated."
-  (require 'eat)
-  (unless (executable-find antigravity-program)
-    (user-error "Antigravity program `%s' not found in PATH" antigravity-program))
-  (let* ((directory (file-name-as-directory (expand-file-name directory)))
-         (default-directory directory)
-         (name (antigravity--unused-buffer-name directory))
-         ;; Without this the terminal flickers while the agent redraws.
-         (process-adaptive-read-buffering nil)
-         (process-environment
-          (append (list (format "ANTIGRAVITY_TMUX_THEME=%s" (ai-term--theme)))
-                  (and session (list (concat "ANTIGRAVITY_TMUX_SESSION=" session)))
-                  process-environment))
-         (buffer (eat-make (string-trim name "\\*" "\\*") antigravity-program)))
-    (with-current-buffer buffer
-      ;; Nothing in here is a shell, and a scroll back through the conversation
-      ;; should not run off the end of what eat kept.
-      (setq-local eat-enable-directory-tracking nil)
-      (setq-local eat-enable-shell-prompt-annotation nil)
-      (setq-local eat-term-scrollback-size nil)
-      ;; Antigravity wraps code snippets to the width of its terminal, so shrink
-      ;; the text rather than let a narrow window wrap them, exactly as the
-      ;; claude buffers do.
-      (my-eat-fit-columns-mode 1))
-    buffer))
+SESSION and SWITCHES mean what they do in `ai-term--start', which this
+is Antigravity's name for."
+  (ai-term--start "antigravity" antigravity-program directory session switches))
 
 (defun antigravity (&optional arg)
   "Attach to this project's Antigravity session, starting one if needed.
@@ -2295,18 +2371,206 @@ is one, so this is also the way back in after an Emacs restart or a
 dropped ssh connection.  With prefix ARG, always start a new instance."
   (interactive "P")
   (let* ((dir (ai-term--directory))
-         (buffers (and (null arg) dir (antigravity--buffers-for-directory dir))))
+         (buffers (and (null arg) dir
+                       (ai-term--buffers-for-directory "antigravity" dir))))
     (pop-to-buffer
      (if buffers
-         (antigravity--read-buffer "Antigravity buffer: " buffers)
+         (ai-term--read-buffer "Antigravity buffer: " buffers)
        (antigravity--start dir)))))
+
+(defun antigravity--history ()
+  "Conversations `agy' remembers being asked something in, newest first.
+
+Each element is (ID DIRECTORY TIME TEXT): TIME is when the conversation
+was last spoken to, in milliseconds, and TEXT is what was first asked of
+it, which is the only description of it there is."
+  (when (file-readable-p antigravity-history-file)
+    (let ((conversations (make-hash-table :test 'equal))
+          (order nil)
+          (opening nil))
+      (with-temp-buffer
+        (insert-file-contents antigravity-history-file)
+        (goto-char (point-min))
+        (while (not (eobp))
+          (let* ((line (buffer-substring-no-properties
+                        (line-beginning-position) (line-end-position)))
+                 (entry (and (string-prefix-p "{" line)
+                             (ignore-errors
+                               ;; A JSON null reads as nil rather than :null, so
+                               ;; a key that is there but empty is as good as
+                               ;; missing, which is what every test below wants.
+                               (json-parse-string line :object-type 'alist
+                                                  :null-object nil
+                                                  :false-object nil))))
+                 (id (alist-get 'conversationId entry))
+                 (dir (alist-get 'workspace entry))
+                 (time (alist-get 'timestamp entry))
+                 ;; /exit and friends say nothing about what a conversation
+                 ;; was for, so they never become its description.
+                 (text (and (not (equal "slash_command" (alist-get 'type entry)))
+                            (let ((display (alist-get 'display entry)))
+                              (and (stringp display) display)))))
+            (cond
+             ;; A blank or half-written line says nothing about the session it
+             ;; fell in the middle of, so forget what was being held.
+             ((not (and entry (stringp dir) (numberp time)))
+              (setq opening nil))
+             ;; The first thing said in a session is written down before the
+             ;; conversation has an id, so hold on to it: the next line to
+             ;; mention an id we have not seen is that same conversation, and
+             ;; this was what opened it.
+             ((not (stringp id)) (setq opening (cons dir text)))
+             (t
+              (let ((known (gethash id conversations)))
+                (unless known
+                  (setq known (list id dir time
+                                    (or (and (equal (car opening) dir)
+                                             (cdr opening))
+                                        text)))
+                  (puthash id known conversations)
+                  (push id order))
+                (setf (nth 2 known) time)
+                (unless (nth 3 known) (setf (nth 3 known) text)))
+              (setq opening nil))))
+          (forward-line 1)))
+      (sort (mapcar (lambda (id) (gethash id conversations)) (nreverse order))
+            (lambda (a b) (> (nth 2 a) (nth 2 b)))))))
+
+(defun antigravity--conversation-id (conversation)
+  "The leading eight characters of CONVERSATION's id, which is enough to tell
+it from another in the list."
+  (let ((id (or (nth 0 conversation) "")))
+    (substring id 0 (min 8 (length id)))))
+
+(defun antigravity--conversation-label (conversation)
+  "What the picker calls CONVERSATION: the first line of what opened it.
+
+Falls back to the head of its id, for a conversation whose first line was
+a slash command and so says nothing about what it is."
+  (let* ((text (or (nth 3 conversation) ""))
+         (line (string-trim (or (car (split-string text "\n" t)) ""))))
+    (if (string-empty-p line)
+        (antigravity--conversation-id conversation)
+      (truncate-string-to-width line 72 nil nil t))))
+
+(defun antigravity--read-conversation (prompt conversations &optional show-directory)
+  "Read one of CONVERSATIONS with PROMPT, and return it.
+
+CONVERSATIONS is what `antigravity--history' returns, most recently used
+first, and is offered in that order.  Each is annotated with when it was
+last spoken to, and with SHOW-DIRECTORY where it was -- which is what
+makes a list spanning directories worth reading."
+  (let* ((candidates
+          (let (alist)
+            (dolist (conversation conversations (nreverse alist))
+              (let ((label (antigravity--conversation-label conversation)))
+                ;; Two conversations can open with the same question.
+                (when (assoc label alist)
+                  (setq label (format "%s  [%s]" label
+                                      (antigravity--conversation-id conversation))))
+                (push (cons label conversation) alist)))))
+         (width (apply #'max 0 (mapcar (lambda (c) (string-width (car c)))
+                                       candidates)))
+         (table
+          (lambda (string pred action)
+            (if (eq action 'metadata)
+                `(metadata
+                  (category . antigravity-conversation)
+                  ;; keep `antigravity--history' most-recent-first order
+                  (display-sort-function . identity)
+                  (cycle-sort-function . identity)
+                  (annotation-function
+                   . ,(lambda (candidate)
+                        (when-let* ((conversation (cdr (assoc candidate candidates))))
+                          (concat (make-string
+                                   (1+ (- width (string-width candidate))) ?\s)
+                                  (propertize
+                                   (concat (format-time-string
+                                            "%Y-%m-%d %H:%M"
+                                            (/ (nth 2 conversation) 1000))
+                                           (and show-directory
+                                                (concat "  " (abbreviate-file-name
+                                                              (nth 1 conversation)))))
+                                   'face 'completions-annotations))))))
+              (complete-with-action action candidates string pred)))))
+    ;; CONVERSATIONS is most recent first, and `completing-read' hands back the
+    ;; empty string for an empty minibuffer whatever REQUIRE-MATCH says, so make
+    ;; the newest the default rather than let a bare RET pick nothing.
+    (let ((default (car (car candidates))))
+      (or (cdr (assoc (completing-read prompt table nil t nil nil default)
+                      candidates))
+          (user-error "No conversation chosen")))))
+
+(defun antigravity-resume (&optional arg)
+  "Start Antigravity on one of the conversations it has had here.
+
+Antigravity has no picker of its own to match `claude --resume': its CLI
+re-opens a conversation named by id, or the most recent one, but will not
+list them.  So this reads the list out of `antigravity-history-file' --
+what was first asked of each conversation, and when it was last spoken to
+-- and runs `agy --conversation ID' on the one you pick.  It is the way
+back into a conversation whose tmux session is gone, after a reboot or an
+`antigravity-tmux-kill'; use `antigravity' for the one running right now.
+
+Only this directory's conversations are offered -- this one or a
+subdirectory of it.  With prefix ARG, every directory's are, and the one
+you pick is started in the directory it belongs to.  Either way a
+conversation whose directory has since been deleted is left out, there
+being nowhere to start it.
+
+The conversation comes back on a tmux session of its own, so the one
+already running here, if any, is left alone."
+  (interactive "P")
+  (let* ((dir (ai-term--directory))
+         (history (antigravity--history))
+         ;; A conversation whose directory has been deleted -- half of them, on
+         ;; a machine that cuts a worktree per pull request -- cannot be walked
+         ;; back into: there is nowhere to start the agent.  Leave those out
+         ;; rather than offer a choice that only fails.
+         (live (seq-filter (lambda (conversation)
+                             (file-directory-p (nth 1 conversation)))
+                           history))
+         (here (if arg
+                   live
+                 ;; This directory, or one under it: agy asked from a
+                 ;; subdirectory records that subdirectory, and the
+                 ;; conversation still belongs to the project.
+                 (let ((this (file-name-as-directory (file-truename dir))))
+                   (seq-filter (lambda (conversation)
+                                 (string-prefix-p
+                                  this (file-name-as-directory
+                                        (file-truename (nth 1 conversation)))))
+                               live)))))
+    (cond
+     ((null history)
+      ;; No history to read -- a fresh install, or a CLI that has stopped
+      ;; keeping one.  Ask for the most recent conversation instead, which is
+      ;; the one thing agy will do without being told an id.
+      (message "No conversation history in %s; continuing the most recent one"
+               (abbreviate-file-name antigravity-history-file))
+      (pop-to-buffer (antigravity--start dir nil '("--continue"))))
+     ((null here)
+      ;; Test what is left rather than what was asked for: with every
+      ;; conversation's directory gone, pointing at %s would only lead to the
+      ;; other message.
+      (if live
+          (user-error "No Antigravity conversations in %s (%s for every directory)"
+                      (abbreviate-file-name dir)
+                      (substitute-command-keys "\\[universal-argument]"))
+        (user-error "Every Antigravity conversation was in a directory that is gone")))
+     (t
+      (let ((conversation (antigravity--read-conversation
+                           "Resume Antigravity conversation: " here arg)))
+        (pop-to-buffer (antigravity--start (nth 1 conversation) nil
+                                           (list "--conversation"
+                                                 (nth 0 conversation)))))))))
 
 (defun antigravity-select-buffer ()
   "Switch to one of the Antigravity terminals running in this Emacs."
   (interactive)
-  (let ((buffers (or (antigravity--all-buffers)
+  (let ((buffers (or (ai-term--all-buffers "antigravity")
                      (user-error "No Antigravity buffers"))))
-    (pop-to-buffer (antigravity--read-buffer "Antigravity buffer: " buffers))))
+    (pop-to-buffer (ai-term--read-buffer "Antigravity buffer: " buffers))))
 
 (defun antigravity-tmux-switch (session)
   "Attach to a background antigravity tmux SESSION in this Emacs.
@@ -2324,10 +2588,10 @@ second client to it."
   (pcase-let* ((`(,name ,dir ,attached) session)
                (dir (and dir (file-name-as-directory dir)))
                (live (and attached dir (file-directory-p dir)
-                          (antigravity--buffers-for-directory dir))))
+                          (ai-term--buffers-for-directory "antigravity" dir))))
     (pop-to-buffer
      (if live
-         (antigravity--read-buffer "Antigravity buffer: " live)
+         (ai-term--read-buffer "Antigravity buffer: " live)
        ;; antigravity-tmux re-attaches to ANTIGRAVITY_TMUX_SESSION when it
        ;; exists, so name the session explicitly rather than relying on it being
        ;; derivable from the directory (which may be gone, or shared by several
@@ -2358,6 +2622,146 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
 `claude-pr' for the other agent; see `ai-pr--worktree'."
   (interactive (list (ai-pr--read "Antigravity on pull request: ")))
   (pop-to-buffer (antigravity--start (ai-pr--worktree pr))))
+
+;;;; agy
+;;
+;; The CLI is called agy, and so are the two commands that were written with it
+;; in mind (`agy-dwim', `agy-pr'), but everything else here is spelled out as
+;; antigravity -- which means M-x agy finds two commands and misses six.  Give
+;; the whole set the short name as well, so the agent can be reached by the name
+;; it actually goes by.  Both names run the same code, and starting one this way
+;; is a tmux session like any other: `antigravity--start' runs antigravity-tmux,
+;; so the conversation outlives the buffer, the Emacs and the ssh connection.
+
+(dolist (pair '((agy                . antigravity)
+                (agy-resume         . antigravity-resume)
+                (agy-select-buffer  . antigravity-select-buffer)
+                (agy-tmux-switch    . antigravity-tmux-switch)
+                (agy-tmux-kill      . antigravity-tmux-kill)
+                (agy-wt             . antigravity-wt)))
+  (defalias (car pair) (cdr pair)
+    (format "Alias for `%s'." (cdr pair))))
+
+;;;; Copilot
+;;
+;; GitHub's `copilot' CLI is a terminal program with no Emacs package, like
+;; agy, so an eat buffer running copilot-tmux in the project root is the whole
+;; of it.  Unlike agy it has a picker for its own past conversations
+;; (`copilot --resume'), as claude does, so this is the smallest of the three
+;; agents: the shared code above, plus the name of the program to run.
+;;
+;; Everything here is spelled copilot-cli- rather than copilot-.  copilot.el
+;; (the inline completion) and copilot-chat.el are both loaded in this config
+;; and own the `copilot-' prefix between them; commands of ours landing in the
+;; middle of theirs would be a collision waiting for their next release.  The
+;; CLI it runs is still plain `copilot'.
+
+(defgroup copilot-cli nil
+  "Run GitHub Copilot's `copilot' CLI in an Emacs terminal."
+  :group 'tools)
+
+(defcustom copilot-cli-program "copilot-tmux"
+  "Program `copilot-cli' runs in an eat terminal.
+
+The default, ~/.local/bin/copilot-tmux, is ~/.local/bin/ai-tmux under the
+name that makes it run `copilot' in a detachable tmux session; set this
+to \"copilot\" to run the CLI directly and lose the conversation with the
+buffer."
+  :type 'string
+  :group 'copilot-cli)
+
+(defun copilot-cli--start (directory &optional session switches)
+  "Open a Copilot terminal working in DIRECTORY and return its buffer.
+
+SESSION and SWITCHES mean what they do in `ai-term--start', which this
+is Copilot's name for."
+  (ai-term--start "copilot" copilot-cli-program directory session switches))
+
+(defun copilot-cli (&optional arg)
+  "Attach to this project's Copilot session, starting one if needed.
+
+Re-uses the running Copilot buffer for the current project when there is
+one, so this is also the way back in after an Emacs restart or a dropped
+ssh connection.  With prefix ARG, always start a new instance."
+  (interactive "P")
+  (let* ((dir (ai-term--directory))
+         (buffers (and (null arg) dir
+                       (ai-term--buffers-for-directory "copilot" dir))))
+    (pop-to-buffer
+     (if buffers
+         (ai-term--read-buffer "Copilot buffer: " buffers)
+       (copilot-cli--start dir)))))
+
+(defun copilot-cli-resume ()
+  "Start Copilot on one of the conversations it has had here.
+
+`copilot --resume': the CLI lists the sessions it remembers and re-opens
+the one you pick, the way `claude --resume' does -- which is the way back
+to a conversation whose tmux session is gone, after a reboot or a
+`copilot-cli-tmux-kill'.  Use `copilot-cli' for the one running right
+now.
+
+The resumed conversation gets a tmux session of its own, so the one
+already running here, if any, is left alone."
+  (interactive)
+  (pop-to-buffer (copilot-cli--start (ai-term--directory) nil '("--resume"))))
+
+(defun copilot-cli-select-buffer ()
+  "Switch to one of the Copilot terminals running in this Emacs."
+  (interactive)
+  (let ((buffers (or (ai-term--all-buffers "copilot")
+                     (user-error "No Copilot buffers"))))
+    (pop-to-buffer (ai-term--read-buffer "Copilot buffer: " buffers))))
+
+(defun copilot-cli-tmux-switch (session)
+  "Attach to a background copilot tmux SESSION in this Emacs.
+
+Lists every session on the copilot tmux server -- including ones started
+from another Emacs, another machine's ssh connection, or a plain
+terminal -- and re-attaches to the one you pick.  When this Emacs is
+already showing that session, pop to its buffer instead of attaching a
+second client to it."
+  (interactive (list (ai-tmux--read-session "copilot" "Copilot session: ")))
+  (copilot-cli-tmux--attach session))
+
+(defun copilot-cli-tmux--attach (session)
+  "Show the copilot tmux SESSION, (NAME DIRECTORY ATTACHED), in this Emacs."
+  (pcase-let* ((`(,name ,dir ,attached) session)
+               (dir (and dir (file-name-as-directory dir)))
+               (live (and attached dir (file-directory-p dir)
+                          (ai-term--buffers-for-directory "copilot" dir))))
+    (pop-to-buffer
+     (if live
+         (ai-term--read-buffer "Copilot buffer: " live)
+       ;; copilot-tmux re-attaches to COPILOT_TMUX_SESSION when it exists, so
+       ;; name the session explicitly rather than relying on it being derivable
+       ;; from the directory (which may be gone, or shared by several sessions).
+       (copilot-cli--start (if (and dir (file-directory-p dir))
+                               dir
+                             default-directory)
+                           name)))))
+
+(defun copilot-cli-tmux-kill (session)
+  "End the background copilot tmux SESSION.
+
+Killing a Copilot buffer only detaches from tmux -- the agent keeps
+running so it can be re-attached.  Use this to actually stop it."
+  (interactive (list (ai-tmux--read-session "copilot" "End copilot session: ")))
+  (ai-tmux--kill "copilot" session))
+
+(defun copilot-cli-wt (name)
+  "Start Copilot on a fresh git worktree of this repository, named NAME.
+
+See `ai-wt--worktree' for how the worktree and its branch are chosen."
+  (interactive (list (read-string "Worktree/branch name: ")))
+  (pop-to-buffer (copilot-cli--start (ai-wt--worktree name))))
+
+(defun copilot-cli-pr (pr)
+  "Start Copilot on pull request PR of this repository, in its own worktree.
+
+`claude-pr' for the other agent; see `ai-pr--worktree'."
+  (interactive (list (ai-pr--read "Copilot on pull request: ")))
+  (pop-to-buffer (copilot-cli--start (ai-pr--worktree pr))))
 
 ;;;; One key for all of it
 ;;
@@ -2397,15 +2801,21 @@ Which of them runs depends on where it was called from:
 
 A buffer in this Emacs when there is one; failing that a tmux session
 started here by an Emacs that has since gone, which claude-tmux
-re-attaches to rather than starting a second claude."
+re-attaches to rather than starting a second claude.
+
+The session is named rather than left to be derived from the directory:
+a conversation that came back through `claude-resume' is running under
+`<dir>-<hash>-2', which is this directory's session but not this
+directory's name."
   (require 'claude-code)
   (let* ((dir (claude-code--directory))
-         (buffers (and dir (claude-code--find-claude-buffers-for-directory dir))))
+         (buffers (and dir (claude-code--find-claude-buffers-for-directory dir)))
+         (session (and dir (null buffers)
+                       (ai-tmux--session-for-directory "claude" dir))))
     (cond
      ((= 1 (length buffers)) (pop-to-buffer (car buffers)) t)
      (buffers (call-interactively #'claude-code-select-buffer) t)
-     ((and dir (ai-tmux--session-for-directory "claude" dir))
-      (claude-code--start-in dir) t))))
+     (session (claude-code--start-in dir (nth 0 session)) t))))
 
 (defun claude-dwim ()
   "Do the useful thing with Claude for wherever this was called from.
@@ -2420,15 +2830,19 @@ one being read.  See `ai-dwim'."
            (lambda () (call-interactively #'claude-wt))))
 
 (defun agy-dwim--rejoin ()
-  "Show this directory's Antigravity conversation, or return nil for none."
+  "Show this directory's Antigravity conversation, or return nil for none.
+
+See `claude-dwim--rejoin' for why the session is named."
   (let* ((dir (ai-term--directory))
-         (buffers (and dir (antigravity--buffers-for-directory dir))))
+         (buffers (and dir (ai-term--buffers-for-directory
+                            "antigravity" dir)))
+         (session (and dir (null buffers)
+                       (ai-tmux--session-for-directory "antigravity" dir))))
     (cond
-     (buffers (pop-to-buffer (antigravity--read-buffer "Antigravity buffer: "
-                                                       buffers))
+     (buffers (pop-to-buffer (ai-term--read-buffer "Antigravity buffer: "
+                                                   buffers))
               t)
-     ((and dir (ai-tmux--session-for-directory "antigravity" dir))
-      (pop-to-buffer (antigravity--start dir)) t))))
+     (session (pop-to-buffer (antigravity--start dir (nth 0 session))) t))))
 
 (defun agy-dwim ()
   "Do the useful thing with Antigravity for wherever this was called from.
@@ -2437,6 +2851,47 @@ one being read.  See `ai-dwim'."
   (interactive)
   (ai-dwim #'agy-dwim--rejoin
            (lambda () (call-interactively #'antigravity-wt))))
+
+(defun copilot-cli-dwim--rejoin ()
+  "Show this directory's Copilot conversation, or return nil for none.
+
+See `claude-dwim--rejoin' for why the session is named."
+  (let* ((dir (ai-term--directory))
+         (buffers (and dir (ai-term--buffers-for-directory "copilot" dir)))
+         (session (and dir (null buffers)
+                       (ai-tmux--session-for-directory "copilot" dir))))
+    (cond
+     (buffers (pop-to-buffer (ai-term--read-buffer "Copilot buffer: " buffers))
+              t)
+     (session (pop-to-buffer (copilot-cli--start dir (nth 0 session))) t))))
+
+(defun copilot-cli-dwim ()
+  "Do the useful thing with Copilot for wherever this was called from.
+
+`claude-dwim' for the other agent; see `ai-dwim' for what it decides."
+  (interactive)
+  (ai-dwim #'copilot-cli-dwim--rejoin
+           (lambda () (call-interactively #'copilot-cli-wt))))
+
+(defvar copilot-cli-command-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "o" #'copilot-cli)
+    (define-key map (kbd "RET") #'copilot-cli)
+    (define-key map "d" #'copilot-cli-dwim)
+    (define-key map "b" #'copilot-cli-select-buffer)
+    (define-key map "s" #'copilot-cli-tmux-switch)
+    (define-key map "k" #'copilot-cli-tmux-kill)
+    (define-key map "w" #'copilot-cli-wt)
+    (define-key map "p" #'copilot-cli-pr)
+    (define-key map "r" #'copilot-cli-resume)
+    map)
+  "Keymap for the Copilot commands, bound to \\`C-c a o'.
+
+Claude has claude-code.el's map on \\`C-c c' and Antigravity has the
+lowercase letters of `ai-command-map'; the third agent gets a prefix of
+its own rather than a third case of every letter, and repeats
+Antigravity's letters under it -- so \\`C-c a o o' starts it, \\`C-c a o w'
+cuts a worktree, and so on.")
 
 (defvar ai-command-map
   (let ((map (make-sparse-keymap)))
@@ -2447,6 +2902,10 @@ one being read.  See `ai-dwim'."
     (define-key map "D" #'agy-dwim)
     ;; Claude keeps claude-code.el's own map on C-c c; this is only the way in.
     (define-key map "c" #'claude)
+    ;; Copilot, whose commands are one key further in: see
+    ;; `copilot-cli-command-map'.
+    (define-key map "o" copilot-cli-command-map)
+    (define-key map "O" #'copilot-cli-dwim)
     ;; Antigravity, which has no map of its own.
     (define-key map "a" #'antigravity)
     (define-key map "b" #'antigravity-select-buffer)
@@ -2456,6 +2915,10 @@ one being read.  See `ai-dwim'."
     ;; A pull request, in a worktree of its own.
     (define-key map "p" #'claude-pr)
     (define-key map "P" #'agy-pr)
+    ;; A conversation whose session is gone: back in through the agent's own
+    ;; history rather than tmux's.
+    (define-key map "r" #'claude-resume)
+    (define-key map "R" #'antigravity-resume)
     map)
   "Keymap for the coding-agent commands, bound to \\`C-c a'.")
 

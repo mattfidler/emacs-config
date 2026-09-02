@@ -273,15 +273,16 @@ mkdir -p "${HOME}/.ccache"
 
 cp ccache "${HOME}/.ccache/ccache.conf"
 
-# Claude Code and Antigravity each run under a tmux server of their own; see
-# README.md.  One copy of each script serves both agents and works out which one
-# it is from the name it was called by, so install it once and link the names.
+# Claude Code, Antigravity and Copilot each run under a tmux server of their
+# own; see README.md.  One copy of each script serves every agent and works out
+# which one it is from the name it was called by, so install it once and link
+# the names.
 
 mkdir -p "${HOME}/.local/bin"
 
 install -m 755 ai-tmux ai-wt ai-pr "${HOME}/.local/bin/"
 
-for agent in claude antigravity agy; do
+for agent in claude antigravity agy copilot; do
     ln -sfn ai-tmux "${HOME}/.local/bin/${agent}-tmux"
     ln -sfn ai-wt   "${HOME}/.local/bin/${agent}-wt"
     ln -sfn ai-pr   "${HOME}/.local/bin/${agent}-pr"

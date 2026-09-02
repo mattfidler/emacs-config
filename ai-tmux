@@ -6,12 +6,13 @@
 # this again from the same directory re-attaches to the live agent.
 #
 # One copy serves every agent.  It is installed under one name per agent --
-# claude-tmux runs claude, antigravity-tmux runs agy -- and works out which
-# agent it is from the name it was called by, so each gets its own tmux server
-# and its own environment variables:
+# claude-tmux runs claude, antigravity-tmux runs agy, copilot-tmux runs copilot
+# -- and works out which agent it is from the name it was called by, so each
+# gets its own tmux server and its own environment variables:
 #
 #   claude-tmux       claude       socket claude        CLAUDE_TMUX_*
 #   antigravity-tmux  agy          socket antigravity   ANTIGRAVITY_TMUX_*
+#   copilot-tmux      copilot      socket copilot       COPILOT_TMUX_*
 #
 # The session name is derived from the working directory.  Set <AGENT>_TMUX_SESSION
 # to run more than one agent of the same kind in the same directory.  Sessions
@@ -32,6 +33,7 @@ esac
 case $tool in
     claude)      default_program=claude ;;
     antigravity) default_program=agy ;;
+    copilot)     default_program=copilot ;;
     *)           default_program=$tool ;;
 esac
 
@@ -79,6 +81,20 @@ fi
 for arg in "$@"; do
     cmd="$cmd $(printf '%q' "$arg")"
 done
+
+# Switches such as --resume or --continue only reach an agent that is actually
+# starting: -A below would attach to the session already running here and drop
+# them on the floor, silently.  So when there are arguments, take a session name
+# nothing has instead -- unless <AGENT>_TMUX_SESSION asked for a particular
+# session by name, which is a request to go back to that one.
+if [ $# -gt 0 ] && [ -z "$(setting SESSION)" ]; then
+    base=$session
+    n=2
+    while tmux -L "$socket" has-session -t "=$session" 2>/dev/null; do
+        session="$base-$n"
+        n=$((n + 1))
+    done
+fi
 
 # -u TMUX: never nest, even when the caller is itself running under tmux.
 # new-session -A: attach to the session if it already exists, else create it.
