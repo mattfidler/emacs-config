@@ -6,13 +6,16 @@
 # this again from the same directory re-attaches to the live agent.
 #
 # One copy serves every agent.  It is installed under one name per agent --
-# claude-tmux runs claude, antigravity-tmux runs agy, copilot-tmux runs copilot
-# -- and works out which agent it is from the name it was called by, so each
-# gets its own tmux server and its own environment variables:
+# claude-tmux runs claude, antigravity-tmux runs agy, copilot-tmux runs copilot,
+# opencode-tmux runs opencode, kilo-tmux runs kilo -- and works out which agent it
+# is from the name it was called by, so each gets its own tmux server and its own
+# environment variables:
 #
 #   claude-tmux       claude       socket claude        CLAUDE_TMUX_*
 #   antigravity-tmux  agy          socket antigravity   ANTIGRAVITY_TMUX_*
 #   copilot-tmux      copilot      socket copilot       COPILOT_TMUX_*
+#   opencode-tmux     opencode     socket opencode      OPENCODE_TMUX_*
+#   kilo-tmux         kilo         socket kilo          KILO_TMUX_*
 #
 # The session name is derived from the working directory.  Set <AGENT>_TMUX_SESSION
 # to run more than one agent of the same kind in the same directory.  Sessions
@@ -26,14 +29,17 @@ set -uo pipefail
 tool=$(basename -- "$0")
 tool=${tool%-tmux}
 case $tool in
-    ''|ai) tool=${AI_TMUX_TOOL:-claude} ;;
-    agy)   tool=antigravity ;;
+    ''|ai)    tool=${AI_TMUX_TOOL:-claude} ;;
+    agy)      tool=antigravity ;;
+    kilocode) tool=kilo ;;
 esac
 
 case $tool in
     claude)      default_program=claude ;;
     antigravity) default_program=agy ;;
     copilot)     default_program=copilot ;;
+    opencode)    default_program=opencode ;;
+    kilo)        default_program=kilo ;;
     *)           default_program=$tool ;;
 esac
 

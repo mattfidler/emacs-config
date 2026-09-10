@@ -3,9 +3,10 @@
 #
 # Working in ~/src/dir, `claude-wt feature-x' creates the branch feature-x in
 # ~/src/dir-feature-x and runs claude there, so an agent can churn on its own
-# checkout while ~/src/dir stays exactly as you left it.  `antigravity-wt' and
-# `copilot-wt' do the same for those agents: like ai-tmux, one copy serves every
-# agent and works out which one from the name it was called by.
+# checkout while ~/src/dir stays exactly as you left it.  `antigravity-wt',
+# `copilot-wt', `opencode-wt' and `kilo-wt' do the same for those agents: like
+# ai-tmux, one copy serves every agent and works out which one from the name it
+# was called by.
 #
 # With no argument it asks for the worktree/branch name.  The branch is cut
 # from the current HEAD; an existing branch of that name is checked out
@@ -17,14 +18,17 @@
 # Usage: claude-wt [NAME] [agent args...]
 #        antigravity-wt [NAME] [agent args...]
 #        copilot-wt [NAME] [agent args...]
+#        opencode-wt [NAME] [agent args...]
+#        kilo-wt [NAME] [agent args...]
 
 set -uo pipefail
 
 tool=$(basename -- "$0")
 tool=${tool%-wt}
 case $tool in
-    ''|ai) tool=${AI_TMUX_TOOL:-claude} ;;
-    agy)   tool=antigravity ;;
+    ''|ai)    tool=${AI_TMUX_TOOL:-claude} ;;
+    agy)      tool=antigravity ;;
+    kilocode) tool=kilo ;;
 esac
 
 die() { printf '%s-wt: %s\n' "$tool" "$*" >&2; exit 1; }

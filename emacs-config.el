@@ -433,6 +433,8 @@
      ("h" "claude" claude-dwim)
      ("H" "antigravity" agy-dwim)
      ("C" "copilot" copilot-cli-dwim)
+     ("O" "opencode" opencode-dwim)
+     ("K" "kilo" kilo-dwim)
      ])
   ;;(define-key ergoemacs-override-keymap (kbd "<menu> k") nil)
   ;;(define-key ergoemacs-override-keymap (kbd "<apps> k") nil)
@@ -1590,10 +1592,16 @@ With a mouse EVENT, act on the terminal under the pointer."
 (use-package monet
   :vc (:url "https://github.com/stevemolitor/monet" :rev :newest))
 
-;; systemd starts `emacs --daemon' with a minimal PATH, so ~/.local/bin (claude,
-;; claude-tmux, gh, ...) is invisible to `executable-find' and to every
-;; subprocess Emacs starts.  Put it back, for this Emacs and its children.
-(let ((bin (expand-file-name "~/.local/bin")))
+;; systemd starts `emacs --daemon' with a minimal PATH, so the directories the
+;; agents live in are invisible to `executable-find' and to every subprocess
+;; Emacs starts.  Two of them are missing: ~/.local/bin (claude, claude-tmux,
+;; gh, ...), which systemd never had; and ~/.opencode/bin, where opencode's
+;; installer drops its binary and which it adds to PATH in ~/.bashrc -- a file
+;; only an interactive shell reads, so opencode runs from a terminal and is
+;; nowhere to be found from the daemon.  Put both back, for this Emacs and its
+;; children.
+(dolist (bin (list (expand-file-name "~/.local/bin")
+                   (expand-file-name "~/.opencode/bin")))
   (when (file-directory-p bin)
     (add-to-list 'exec-path bin)
     (let ((path (or (getenv "PATH") "")))
@@ -1602,14 +1610,15 @@ With a mouse EVENT, act on the terminal under the pointer."
 
 ;;; Coding agents in a terminal.
 ;;
-;; Claude and Antigravity run the same way: an eat buffer showing a client
-;; attached to a detachable tmux session of the agent's own (~/.local/bin/ai-tmux,
-;; installed once per agent as claude-tmux and antigravity-tmux), so a
-;; conversation outlives both a dropped ssh connection and an Emacs restart, and
-;; starting the agent again in the same directory re-attaches to it.
+;; Every agent here runs the same way: an eat buffer showing a client attached to
+;; a detachable tmux session of the agent's own (~/.local/bin/ai-tmux, installed
+;; once per agent as claude-tmux, antigravity-tmux, copilot-tmux, opencode-tmux,
+;; kilo-tmux), so a conversation outlives both a dropped ssh connection and an
+;; Emacs restart, and starting the agent again in the same directory re-attaches
+;; to it.
 ;;
-;; claude-code.el is the Emacs half for Claude; the much smaller half Antigravity
-;; needs is below.  Everything that is not particular to one agent -- which
+;; claude-code.el is the Emacs half for Claude; the much smaller half the other
+;; four need is below.  Everything that is not particular to one agent -- which
 ;; directory a buffer belongs to, the theme to start in, listing and switching to
 ;; and ending background sessions, cutting a worktree to start one in -- is
 ;; shared, and each agent's commands are a few lines on top of it.
@@ -1633,10 +1642,10 @@ belongs to without having to load claude-code.el to ask."
 
 ;;;; A terminal for an agent that has no Emacs package
 ;;
-;; claude-code.el is all of this for Claude.  Antigravity and Copilot have no
-;; package, and want the same few things: name a buffer after the directory the
-;; agent works in, find the ones already running, and start another on that
-;; agent's <agent>-tmux.  So here they are once, taking the agent as an
+;; claude-code.el is all of this for Claude.  Antigravity, Copilot, opencode and
+;; kilo have no package, and want the same few things: name a buffer after the
+;; directory the agent works in, find the ones already running, and start another
+;; on that agent's <agent>-tmux.  So here they are once, taking the agent as an
 ;; argument, and each agent's own commands are a line apiece on top.
 
 (defun ai-term--buffer-name (agent directory &optional instance)
@@ -1709,8 +1718,9 @@ they are dropped: ask for one or the other, not both."
   (let* ((directory (file-name-as-directory (expand-file-name directory)))
          (default-directory directory)
          (name (ai-term--unused-buffer-name agent directory))
-         ;; CLAUDE_TMUX_*, ANTIGRAVITY_TMUX_*, COPILOT_TMUX_*: the same name
-         ;; ai-tmux derives from the agent it was called as.
+         ;; CLAUDE_TMUX_*, ANTIGRAVITY_TMUX_*, COPILOT_TMUX_*, OPENCODE_TMUX_*,
+         ;; KILO_TMUX_*: the same name ai-tmux derives from the agent it was
+         ;; called as.
          (prefix (upcase (replace-regexp-in-string "-" "_" agent)))
          ;; Without this the terminal flickers while the agent redraws.
          (process-adaptive-read-buffering nil)
@@ -1733,10 +1743,156 @@ they are dropped: ask for one or the other, not both."
       (my-eat-fit-columns-mode 1))
     buffer))
 
+;;;; The conversations an agent remembers
+;;
+;; tmux finds a conversation that is still running; this finds one that is not.
+;; Three of the agents need the same picker for it -- Antigravity, which will not
+;; list its conversations at all, and opencode and its fork kilo, which list them
+;; but leave joining the list to the re-opening switch as an exercise -- so it is
+;; here once, over a conversation spelled (ID DIRECTORY TIME TEXT): TIME is when
+;; it was last spoken to, in milliseconds, and TEXT is whatever the agent has by
+;; way of a description of it.
+
+(defun ai-term--conversation-id (conversation)
+  "The leading eight characters of CONVERSATION's id, which is enough to tell
+it from another in the list."
+  (let ((id (or (nth 0 conversation) "")))
+    (substring id 0 (min 8 (length id)))))
+
+(defun ai-term--conversation-label (conversation)
+  "What the picker calls CONVERSATION: the first line of its description.
+
+Falls back to the head of its id, for a conversation that has no
+description worth reading -- one that opened with a slash command, say."
+  (let* ((text (or (nth 3 conversation) ""))
+         (line (string-trim (or (car (split-string text "\n" t)) ""))))
+    (if (string-empty-p line)
+        (ai-term--conversation-id conversation)
+      (truncate-string-to-width line 72 nil nil t))))
+
+(defun ai-term--read-conversation (prompt conversations &optional show-directory)
+  "Read one of CONVERSATIONS with PROMPT, and return it.
+
+CONVERSATIONS is most recently used first, and is offered in that order.
+Each is annotated with when it was last spoken to, and with SHOW-DIRECTORY
+where it was -- which is what makes a list spanning directories worth
+reading."
+  (let* ((candidates
+          (let (alist)
+            (dolist (conversation conversations (nreverse alist))
+              (let ((label (ai-term--conversation-label conversation)))
+                ;; Two conversations can open with the same question.
+                (when (assoc label alist)
+                  (setq label (format "%s  [%s]" label
+                                      (ai-term--conversation-id conversation))))
+                (push (cons label conversation) alist)))))
+         (width (apply #'max 0 (mapcar (lambda (c) (string-width (car c)))
+                                       candidates)))
+         (table
+          (lambda (string pred action)
+            (if (eq action 'metadata)
+                `(metadata
+                  (category . ai-conversation)
+                  ;; keep the caller's most-recent-first order
+                  (display-sort-function . identity)
+                  (cycle-sort-function . identity)
+                  (annotation-function
+                   . ,(lambda (candidate)
+                        (when-let* ((conversation (cdr (assoc candidate candidates))))
+                          (concat (make-string
+                                   (1+ (- width (string-width candidate))) ?\s)
+                                  (propertize
+                                   (concat (format-time-string
+                                            "%Y-%m-%d %H:%M"
+                                            (/ (nth 2 conversation) 1000))
+                                           (and show-directory
+                                                (concat "  " (abbreviate-file-name
+                                                              (nth 1 conversation)))))
+                                   'face 'completions-annotations))))))
+              (complete-with-action action candidates string pred)))))
+    ;; CONVERSATIONS is most recent first, and `completing-read' hands back the
+    ;; empty string for an empty minibuffer whatever REQUIRE-MATCH says, so make
+    ;; the newest the default rather than let a bare RET pick nothing.
+    (let ((default (car (car candidates))))
+      (or (cdr (assoc (completing-read prompt table nil t nil nil default)
+                      candidates))
+          (user-error "No conversation chosen")))))
+
+(defun ai-term--cli-conversations (directory program &rest args)
+  "Conversations PROGRAM lists when run with ARGS in DIRECTORY, newest first.
+
+For the agents descended from opencode -- opencode itself and kilo, its
+fork -- whose `session list --format json' prints a JSON array of
+objects with id, title, directory and an `updated' in milliseconds,
+most recently spoken to first.  Returned as (ID DIRECTORY TIME TEXT), the
+spelling `ai-term--read-conversation' wants.
+
+A CLI that is not installed, or too old to know the switches, prints
+nothing that parses and is taken to remember nothing.  So does one with
+no sessions to print, which is the same answer by a different route and
+wants the same fallback."
+  (let ((default-directory (file-name-as-directory directory)))
+    (with-temp-buffer
+      (when (and (executable-find program)
+                 ;; stdout here, stderr nowhere: a log line or a login warning
+                 ;; printed over the JSON would only make it unparseable.
+                 (eq 0 (apply #'call-process program nil '(t nil) nil args)))
+        (goto-char (point-min))
+        (let ((sessions (ignore-errors
+                          ;; No sessions at all prints nothing, which is not
+                          ;; JSON; that reads as the empty list it means.
+                          (json-parse-buffer :object-type 'alist
+                                             :array-type 'list
+                                             :null-object nil
+                                             :false-object nil))))
+          (seq-filter
+           (lambda (conversation)
+             (and (stringp (nth 0 conversation))
+                  (stringp (nth 1 conversation))
+                  (numberp (nth 2 conversation))))
+           (mapcar (lambda (session)
+                     (list (alist-get 'id session)
+                           (alist-get 'directory session)
+                           (alist-get 'updated session)
+                           (alist-get 'title session)))
+                   ;; Sessions are a JSON array of objects, so each element is
+                   ;; an alist and its car a cons.  Anything else printed with
+                   ;; a zero status -- an error envelope, `{"error": ...}',
+                   ;; some later version wrapping the array in an object -- is
+                   ;; a list as well, and would walk off the end of `alist-get'
+                   ;; rather than fall back.  Keep only what is shaped right.
+                   (seq-filter (lambda (session)
+                                 (and (consp session) (consp (car session))))
+                               (and (listp sessions) sessions)))))))))
+
+(defun ai-term--live-conversations (conversations)
+  "The CONVERSATIONS there is still somewhere to start an agent in.
+
+A conversation whose directory has since been deleted -- half of them, on
+a machine that cuts a worktree per pull request -- cannot be walked back
+into, so offering it would only fail."
+  (seq-filter (lambda (conversation)
+                (let ((dir (nth 1 conversation)))
+                  (and (stringp dir) (file-directory-p dir))))
+              conversations))
+
+(defun ai-term--conversations-under (conversations directory)
+  "The CONVERSATIONS held in DIRECTORY, or in a subdirectory of it.
+
+An agent asked from a subdirectory records that subdirectory, and the
+conversation still belongs to the project."
+  (let ((this (file-name-as-directory (file-truename directory))))
+    (seq-filter (lambda (conversation)
+                  (string-prefix-p this (file-name-as-directory
+                                         (file-truename (nth 1 conversation)))))
+                conversations)))
+
 (defvar ai-tmux-agents
   '(("claude" . claude-tmux--attach)
     ("antigravity" . antigravity-tmux--attach)
-    ("copilot" . copilot-cli-tmux--attach))
+    ("copilot" . copilot-cli-tmux--attach)
+    ("opencode" . opencode-tmux--attach)
+    ("kilo" . kilo-tmux--attach))
   "The agents that keep their sessions on a tmux server of their own.
 
 Each element is (SOCKET . ATTACH), where SOCKET names the tmux server --
@@ -2436,71 +2592,6 @@ it, which is the only description of it there is."
       (sort (mapcar (lambda (id) (gethash id conversations)) (nreverse order))
             (lambda (a b) (> (nth 2 a) (nth 2 b)))))))
 
-(defun antigravity--conversation-id (conversation)
-  "The leading eight characters of CONVERSATION's id, which is enough to tell
-it from another in the list."
-  (let ((id (or (nth 0 conversation) "")))
-    (substring id 0 (min 8 (length id)))))
-
-(defun antigravity--conversation-label (conversation)
-  "What the picker calls CONVERSATION: the first line of what opened it.
-
-Falls back to the head of its id, for a conversation whose first line was
-a slash command and so says nothing about what it is."
-  (let* ((text (or (nth 3 conversation) ""))
-         (line (string-trim (or (car (split-string text "\n" t)) ""))))
-    (if (string-empty-p line)
-        (antigravity--conversation-id conversation)
-      (truncate-string-to-width line 72 nil nil t))))
-
-(defun antigravity--read-conversation (prompt conversations &optional show-directory)
-  "Read one of CONVERSATIONS with PROMPT, and return it.
-
-CONVERSATIONS is what `antigravity--history' returns, most recently used
-first, and is offered in that order.  Each is annotated with when it was
-last spoken to, and with SHOW-DIRECTORY where it was -- which is what
-makes a list spanning directories worth reading."
-  (let* ((candidates
-          (let (alist)
-            (dolist (conversation conversations (nreverse alist))
-              (let ((label (antigravity--conversation-label conversation)))
-                ;; Two conversations can open with the same question.
-                (when (assoc label alist)
-                  (setq label (format "%s  [%s]" label
-                                      (antigravity--conversation-id conversation))))
-                (push (cons label conversation) alist)))))
-         (width (apply #'max 0 (mapcar (lambda (c) (string-width (car c)))
-                                       candidates)))
-         (table
-          (lambda (string pred action)
-            (if (eq action 'metadata)
-                `(metadata
-                  (category . antigravity-conversation)
-                  ;; keep `antigravity--history' most-recent-first order
-                  (display-sort-function . identity)
-                  (cycle-sort-function . identity)
-                  (annotation-function
-                   . ,(lambda (candidate)
-                        (when-let* ((conversation (cdr (assoc candidate candidates))))
-                          (concat (make-string
-                                   (1+ (- width (string-width candidate))) ?\s)
-                                  (propertize
-                                   (concat (format-time-string
-                                            "%Y-%m-%d %H:%M"
-                                            (/ (nth 2 conversation) 1000))
-                                           (and show-directory
-                                                (concat "  " (abbreviate-file-name
-                                                              (nth 1 conversation)))))
-                                   'face 'completions-annotations))))))
-              (complete-with-action action candidates string pred)))))
-    ;; CONVERSATIONS is most recent first, and `completing-read' hands back the
-    ;; empty string for an empty minibuffer whatever REQUIRE-MATCH says, so make
-    ;; the newest the default rather than let a bare RET pick nothing.
-    (let ((default (car (car candidates))))
-      (or (cdr (assoc (completing-read prompt table nil t nil nil default)
-                      candidates))
-          (user-error "No conversation chosen")))))
-
 (defun antigravity-resume (&optional arg)
   "Start Antigravity on one of the conversations it has had here.
 
@@ -2523,24 +2614,8 @@ already running here, if any, is left alone."
   (interactive "P")
   (let* ((dir (ai-term--directory))
          (history (antigravity--history))
-         ;; A conversation whose directory has been deleted -- half of them, on
-         ;; a machine that cuts a worktree per pull request -- cannot be walked
-         ;; back into: there is nowhere to start the agent.  Leave those out
-         ;; rather than offer a choice that only fails.
-         (live (seq-filter (lambda (conversation)
-                             (file-directory-p (nth 1 conversation)))
-                           history))
-         (here (if arg
-                   live
-                 ;; This directory, or one under it: agy asked from a
-                 ;; subdirectory records that subdirectory, and the
-                 ;; conversation still belongs to the project.
-                 (let ((this (file-name-as-directory (file-truename dir))))
-                   (seq-filter (lambda (conversation)
-                                 (string-prefix-p
-                                  this (file-name-as-directory
-                                        (file-truename (nth 1 conversation)))))
-                               live)))))
+         (live (ai-term--live-conversations history))
+         (here (if arg live (ai-term--conversations-under live dir))))
     (cond
      ((null history)
       ;; No history to read -- a fresh install, or a CLI that has stopped
@@ -2559,7 +2634,7 @@ already running here, if any, is left alone."
                       (substitute-command-keys "\\[universal-argument]"))
         (user-error "Every Antigravity conversation was in a directory that is gone")))
      (t
-      (let ((conversation (antigravity--read-conversation
+      (let ((conversation (ai-term--read-conversation
                            "Resume Antigravity conversation: " here arg)))
         (pop-to-buffer (antigravity--start (nth 1 conversation) nil
                                            (list "--conversation"
@@ -2763,13 +2838,374 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   (interactive (list (ai-pr--read "Copilot on pull request: ")))
   (pop-to-buffer (copilot-cli--start (ai-pr--worktree pr))))
 
+;;;; opencode
+;;
+;; opencode is a terminal program with no Emacs package, like agy and copilot,
+;; so an eat buffer running opencode-tmux in the project root is most of it.
+;; The one thing it wants of its own is a resume picker: `opencode --session ID'
+;; re-opens a conversation and `opencode session list' prints the ids, but the
+;; CLI never joins the two up.  So `opencode-resume' joins them, over the same
+;; picker `antigravity-resume' uses.
+
+(defgroup opencode nil
+  "Run the `opencode' CLI in an Emacs terminal."
+  :group 'tools)
+
+(defcustom opencode-program "opencode-tmux"
+  "Program `opencode' runs in an eat terminal.
+
+The default, ~/.local/bin/opencode-tmux, is ~/.local/bin/ai-tmux under the
+name that makes it run `opencode' in a detachable tmux session; set this
+to \"opencode\" to run the CLI directly and lose the conversation with the
+buffer."
+  :type 'string
+  :group 'opencode)
+
+(defcustom opencode-cli-program "opencode"
+  "The `opencode' CLI itself, which `opencode-resume' asks for its sessions.
+
+`opencode-program' is the wrapper that runs the agent under tmux; this one
+is only ever asked to print, so it is the CLI and never the wrapper."
+  :type 'string
+  :group 'opencode)
+
+(defun opencode--start (directory &optional session switches)
+  "Open an opencode terminal working in DIRECTORY and return its buffer.
+
+SESSION and SWITCHES mean what they do in `ai-term--start', which this is
+opencode's name for."
+  (ai-term--start "opencode" opencode-program directory session switches))
+
+(defun opencode (&optional arg)
+  "Attach to this project's opencode session, starting one if needed.
+
+Re-uses the running opencode buffer for the current project when there is
+one, so this is also the way back in after an Emacs restart or a dropped
+ssh connection.  With prefix ARG, always start a new instance."
+  (interactive "P")
+  (let* ((dir (ai-term--directory))
+         (buffers (and (null arg) dir
+                       (ai-term--buffers-for-directory "opencode" dir))))
+    (pop-to-buffer
+     (if buffers
+         (ai-term--read-buffer "opencode buffer: " buffers)
+       (opencode--start dir)))))
+
+(defun opencode--conversations (directory)
+  "Conversations opencode remembers from DIRECTORY's project, newest first.
+
+`opencode session list --format json' is the whole of the source: it
+prints the project's root sessions -- the ones started at the prompt,
+rather than the children an agent spawns for itself -- most recently
+spoken to first, each with the directory it was held in.  opencode scopes
+that list to the current project and has no switch to widen it, which is
+what makes `opencode-resume''s prefix argument mean the project rather
+than the machine."
+  (ai-term--cli-conversations directory opencode-cli-program
+                              "session" "list" "--format" "json"))
+
+(defun opencode-resume (&optional arg)
+  "Start opencode on one of the conversations it has had here.
+
+opencode's own picker is inside the TUI, which is no help when there is no
+TUI running: the CLI re-opens a conversation named by id (`--session'), or
+the most recent one (`--continue'), and lists them only under a separate
+`opencode session list'.  So this reads that list -- the title opencode
+gave each conversation, and when it was last spoken to -- and starts
+`opencode --session' on the one you pick.  It is the way back into a
+conversation whose tmux session is gone, after a reboot or an
+`opencode-tmux-kill'; use `opencode' for the one running right now.
+
+The list is opencode's own, so it is this project's conversations rather
+than the machine's.  Only the ones held in this directory or a
+subdirectory of it are offered; with prefix ARG the whole project's are,
+annotated with where they were, and the one you pick starts in the
+directory it belongs to.  Either way a conversation whose directory has
+since been deleted is left out, there being nowhere to start it.
+
+The conversation comes back on a tmux session of its own, so the one
+already running here, if any, is left alone."
+  (interactive "P")
+  (let* ((dir (ai-term--directory))
+         (conversations (opencode--conversations dir))
+         (live (ai-term--live-conversations conversations))
+         (here (if arg live (ai-term--conversations-under live dir))))
+    (cond
+     ((null conversations)
+      ;; Nothing listed -- a fresh install, a project opencode has never been
+      ;; run in, or a CLI that cannot be asked.  Ask for the most recent
+      ;; conversation instead, which it will do without being told an id.
+      (message "opencode listed no conversations; continuing the most recent")
+      (pop-to-buffer (opencode--start dir nil '("--continue"))))
+     ((null here)
+      ;; Test what is left rather than what was asked for: with every
+      ;; conversation's directory gone, pointing at %s would only lead to the
+      ;; other message.
+      (if live
+          (user-error "No opencode conversations in %s (%s for the whole project)"
+                      (abbreviate-file-name dir)
+                      (substitute-command-keys "\\[universal-argument]"))
+        (user-error "Every opencode conversation was in a directory that is gone")))
+     (t
+      (let ((conversation (ai-term--read-conversation
+                           "Resume opencode conversation: " here arg)))
+        (pop-to-buffer (opencode--start (nth 1 conversation) nil
+                                        (list "--session"
+                                              (nth 0 conversation)))))))))
+
+(defun opencode-select-buffer ()
+  "Switch to one of the opencode terminals running in this Emacs."
+  (interactive)
+  (let ((buffers (or (ai-term--all-buffers "opencode")
+                     (user-error "No opencode buffers"))))
+    (pop-to-buffer (ai-term--read-buffer "opencode buffer: " buffers))))
+
+(defun opencode-tmux-switch (session)
+  "Attach to a background opencode tmux SESSION in this Emacs.
+
+Lists every session on the opencode tmux server -- including ones started
+from another Emacs, another machine's ssh connection, or a plain
+terminal -- and re-attaches to the one you pick.  When this Emacs is
+already showing that session, pop to its buffer instead of attaching a
+second client to it."
+  (interactive (list (ai-tmux--read-session "opencode" "opencode session: ")))
+  (opencode-tmux--attach session))
+
+(defun opencode-tmux--attach (session)
+  "Show the opencode tmux SESSION, (NAME DIRECTORY ATTACHED), in this Emacs."
+  (pcase-let* ((`(,name ,dir ,attached) session)
+               (dir (and dir (file-name-as-directory dir)))
+               (live (and attached dir (file-directory-p dir)
+                          (ai-term--buffers-for-directory "opencode" dir))))
+    (pop-to-buffer
+     (if live
+         (ai-term--read-buffer "opencode buffer: " live)
+       ;; opencode-tmux re-attaches to OPENCODE_TMUX_SESSION when it exists, so
+       ;; name the session explicitly rather than relying on it being derivable
+       ;; from the directory (which may be gone, or shared by several sessions).
+       (opencode--start (if (and dir (file-directory-p dir))
+                            dir
+                          default-directory)
+                        name)))))
+
+(defun opencode-tmux-kill (session)
+  "End the background opencode tmux SESSION.
+
+Killing an opencode buffer only detaches from tmux -- the agent keeps
+running so it can be re-attached.  Use this to actually stop it."
+  (interactive (list (ai-tmux--read-session "opencode" "End opencode session: ")))
+  (ai-tmux--kill "opencode" session))
+
+(defun opencode-wt (name)
+  "Start opencode on a fresh git worktree of this repository, named NAME.
+
+See `ai-wt--worktree' for how the worktree and its branch are chosen."
+  (interactive (list (read-string "Worktree/branch name: ")))
+  (pop-to-buffer (opencode--start (ai-wt--worktree name))))
+
+(defun opencode-pr (pr)
+  "Start opencode on pull request PR of this repository, in its own worktree.
+
+`claude-pr' for the other agent; see `ai-pr--worktree'."
+  (interactive (list (ai-pr--read "opencode on pull request: ")))
+  (pop-to-buffer (opencode--start (ai-pr--worktree pr))))
+
+;;;; kilo
+;;
+;; kilo is opencode's fork, and it shows: `kilo' takes the same switches as
+;; `opencode', keeps its sessions the same way, and prints them from the same
+;; `session list --format json'.  So this is the opencode section again with one
+;; difference -- kilo's session list takes `--all', which opencode has no switch
+;; for, so a prefix argument here reaches every project rather than stopping at
+;; this one.
+;;
+;; The CLI answers to `kilo' and `kilocode' both.  `kilo' is the name everything
+;; else it owns is spelled with -- ~/.config/kilo, ~/.local/share/kilo -- so it
+;; is the name used here, and kilocode-tmux is linked to it the way agy is to
+;; antigravity.
+
+(defgroup kilo nil
+  "Run the `kilo' CLI in an Emacs terminal."
+  :group 'tools)
+
+(defcustom kilo-program "kilo-tmux"
+  "Program `kilo' runs in an eat terminal.
+
+The default, ~/.local/bin/kilo-tmux, is ~/.local/bin/ai-tmux under the
+name that makes it run `kilo' in a detachable tmux session; set this to
+\"kilo\" to run the CLI directly and lose the conversation with the
+buffer."
+  :type 'string
+  :group 'kilo)
+
+(defcustom kilo-cli-program "kilo"
+  "The `kilo' CLI itself, which `kilo-resume' asks for its sessions.
+
+`kilo-program' is the wrapper that runs the agent under tmux; this one is
+only ever asked to print, so it is the CLI and never the wrapper."
+  :type 'string
+  :group 'kilo)
+
+(defun kilo--start (directory &optional session switches)
+  "Open a kilo terminal working in DIRECTORY and return its buffer.
+
+SESSION and SWITCHES mean what they do in `ai-term--start', which this is
+kilo's name for."
+  (ai-term--start "kilo" kilo-program directory session switches))
+
+(defun kilo (&optional arg)
+  "Attach to this project's kilo session, starting one if needed.
+
+Re-uses the running kilo buffer for the current project when there is
+one, so this is also the way back in after an Emacs restart or a dropped
+ssh connection.  With prefix ARG, always start a new instance."
+  (interactive "P")
+  (let* ((dir (ai-term--directory))
+         (buffers (and (null arg) dir
+                       (ai-term--buffers-for-directory "kilo" dir))))
+    (pop-to-buffer
+     (if buffers
+         (ai-term--read-buffer "kilo buffer: " buffers)
+       (kilo--start dir)))))
+
+(defun kilo--conversations (directory &optional everywhere)
+  "Conversations kilo remembers from DIRECTORY, newest first.
+
+This project's, or with EVERYWHERE every project's: `kilo session list'
+takes an `--all' that opencode's does not, so the wider list is the CLI's
+own answer rather than something assembled here."
+  (apply #'ai-term--cli-conversations directory kilo-cli-program
+         "session" "list" "--format" "json"
+         (and everywhere '("--all"))))
+
+(defun kilo-resume (&optional arg)
+  "Start kilo on one of the conversations it has had here.
+
+kilo's own picker is inside the TUI, which is no help when the reason you
+are looking is that no TUI is running: the CLI re-opens a conversation
+named by id (`--session'), or the most recent one (`--continue'), and
+lists them only under a separate `kilo session list'.  So this reads that
+list -- the title kilo gave each conversation, and when it was last spoken
+to -- and starts `kilo --session' on the one you pick.  It is the way back
+into a conversation whose tmux session is gone, after a reboot or a
+`kilo-tmux-kill'; use `kilo' for the one running right now.
+
+Only this directory's conversations are offered -- this one or a
+subdirectory of it.  With prefix ARG every project's are, annotated with
+where they were, and the one you pick is started in the directory it
+belongs to.  Either way a conversation whose directory has since been
+deleted is left out, there being nowhere to start it.
+
+The conversation comes back on a tmux session of its own, so the one
+already running here, if any, is left alone."
+  (interactive "P")
+  (let* ((dir (ai-term--directory))
+         (conversations (kilo--conversations dir arg))
+         (live (ai-term--live-conversations conversations))
+         (here (if arg live (ai-term--conversations-under live dir))))
+    (cond
+     ((null conversations)
+      ;; Nothing listed -- a fresh install, a project kilo has never been run
+      ;; in, or a CLI that cannot be asked.  Ask for the most recent
+      ;; conversation instead, which it will do without being told an id.
+      (message "kilo listed no conversations; continuing the most recent")
+      (pop-to-buffer (kilo--start dir nil '("--continue"))))
+     ((null here)
+      ;; Test what is left rather than what was asked for: with every
+      ;; conversation's directory gone, pointing at %s would only lead to the
+      ;; other message.
+      (if live
+          (user-error "No kilo conversations in %s (%s for every project)"
+                      (abbreviate-file-name dir)
+                      (substitute-command-keys "\\[universal-argument]"))
+        (user-error "Every kilo conversation was in a directory that is gone")))
+     (t
+      (let ((conversation (ai-term--read-conversation
+                           "Resume kilo conversation: " here arg)))
+        (pop-to-buffer (kilo--start (nth 1 conversation) nil
+                                    (list "--session" (nth 0 conversation)))))))))
+
+(defun kilo-select-buffer ()
+  "Switch to one of the kilo terminals running in this Emacs."
+  (interactive)
+  (let ((buffers (or (ai-term--all-buffers "kilo")
+                     (user-error "No kilo buffers"))))
+    (pop-to-buffer (ai-term--read-buffer "kilo buffer: " buffers))))
+
+(defun kilo-tmux-switch (session)
+  "Attach to a background kilo tmux SESSION in this Emacs.
+
+Lists every session on the kilo tmux server -- including ones started from
+another Emacs, another machine's ssh connection, or a plain terminal --
+and re-attaches to the one you pick.  When this Emacs is already showing
+that session, pop to its buffer instead of attaching a second client to
+it."
+  (interactive (list (ai-tmux--read-session "kilo" "kilo session: ")))
+  (kilo-tmux--attach session))
+
+(defun kilo-tmux--attach (session)
+  "Show the kilo tmux SESSION, (NAME DIRECTORY ATTACHED), in this Emacs."
+  (pcase-let* ((`(,name ,dir ,attached) session)
+               (dir (and dir (file-name-as-directory dir)))
+               (live (and attached dir (file-directory-p dir)
+                          (ai-term--buffers-for-directory "kilo" dir))))
+    (pop-to-buffer
+     (if live
+         (ai-term--read-buffer "kilo buffer: " live)
+       ;; kilo-tmux re-attaches to KILO_TMUX_SESSION when it exists, so name the
+       ;; session explicitly rather than relying on it being derivable from the
+       ;; directory (which may be gone, or shared by several sessions).
+       (kilo--start (if (and dir (file-directory-p dir))
+                        dir
+                      default-directory)
+                    name)))))
+
+(defun kilo-tmux-kill (session)
+  "End the background kilo tmux SESSION.
+
+Killing a kilo buffer only detaches from tmux -- the agent keeps running
+so it can be re-attached.  Use this to actually stop it."
+  (interactive (list (ai-tmux--read-session "kilo" "End kilo session: ")))
+  (ai-tmux--kill "kilo" session))
+
+(defun kilo-wt (name)
+  "Start kilo on a fresh git worktree of this repository, named NAME.
+
+See `ai-wt--worktree' for how the worktree and its branch are chosen."
+  (interactive (list (read-string "Worktree/branch name: ")))
+  (pop-to-buffer (kilo--start (ai-wt--worktree name))))
+
+(defun kilo-pr (pr)
+  "Start kilo on pull request PR of this repository, in its own worktree.
+
+`claude-pr' for the other agent; see `ai-pr--worktree'."
+  (interactive (list (ai-pr--read "kilo on pull request: ")))
+  (pop-to-buffer (kilo--start (ai-pr--worktree pr))))
+
+;;;; kilocode
+;;
+;; The CLI answers to both names, so the commands do too -- `M-x kilocode' finds
+;; the whole set rather than nothing at all.  Both names run the same code, on
+;; the same tmux server: it is `kilo' underneath either way.
+
+(dolist (pair '((kilocode               . kilo)
+                (kilocode-resume        . kilo-resume)
+                (kilocode-select-buffer . kilo-select-buffer)
+                (kilocode-tmux-switch   . kilo-tmux-switch)
+                (kilocode-tmux-kill     . kilo-tmux-kill)
+                (kilocode-wt            . kilo-wt)
+                (kilocode-pr            . kilo-pr)))
+  (defalias (car pair) (cdr pair)
+    (format "Alias for `%s'." (cdr pair))))
+
 ;;;; One key for all of it
 ;;
 ;; The three things worth doing with an agent depend entirely on where you are
-;; standing when you ask, so ask for all three with one key.
+;; standing when you ask, so ask for all three with one key -- one such key per
+;; agent, since which agent is not one of the three things.
 
 (defun ai-dwim (rejoin worktree)
-  "The body of `claude-dwim' and `agy-dwim'.
+  "The body of `claude-dwim', `agy-dwim' and the other agents' dwims.
 
 REJOIN is called with no arguments to show the conversation belonging to
 this directory, and returns nil when there is none to show.  WORKTREE is
@@ -2873,6 +3309,52 @@ See `claude-dwim--rejoin' for why the session is named."
   (ai-dwim #'copilot-cli-dwim--rejoin
            (lambda () (call-interactively #'copilot-cli-wt))))
 
+(defun opencode-dwim--rejoin ()
+  "Show this directory's opencode conversation, or return nil for none.
+
+See `claude-dwim--rejoin' for why the session is named."
+  (let* ((dir (ai-term--directory))
+         (buffers (and dir (ai-term--buffers-for-directory "opencode" dir)))
+         (session (and dir (null buffers)
+                       (ai-tmux--session-for-directory "opencode" dir))))
+    (cond
+     (buffers (pop-to-buffer (ai-term--read-buffer "opencode buffer: " buffers))
+              t)
+     (session (pop-to-buffer (opencode--start dir (nth 0 session))) t))))
+
+(defun opencode-dwim ()
+  "Do the useful thing with opencode for wherever this was called from.
+
+`claude-dwim' for the other agent; see `ai-dwim' for what it decides."
+  (interactive)
+  (ai-dwim #'opencode-dwim--rejoin
+           (lambda () (call-interactively #'opencode-wt))))
+
+(defun kilo-dwim--rejoin ()
+  "Show this directory's kilo conversation, or return nil for none.
+
+See `claude-dwim--rejoin' for why the session is named."
+  (let* ((dir (ai-term--directory))
+         (buffers (and dir (ai-term--buffers-for-directory "kilo" dir)))
+         (session (and dir (null buffers)
+                       (ai-tmux--session-for-directory "kilo" dir))))
+    (cond
+     (buffers (pop-to-buffer (ai-term--read-buffer "kilo buffer: " buffers))
+              t)
+     (session (pop-to-buffer (kilo--start dir (nth 0 session))) t))))
+
+(defun kilo-dwim ()
+  "Do the useful thing with kilo for wherever this was called from.
+
+`claude-dwim' for the other agent; see `ai-dwim' for what it decides."
+  (interactive)
+  (ai-dwim #'kilo-dwim--rejoin
+           (lambda () (call-interactively #'kilo-wt))))
+
+;; The rest of kilo's commands are aliased to kilocode where they are defined;
+;; this one is defined here, after that block, so it is aliased here.
+(defalias 'kilocode-dwim 'kilo-dwim "Alias for `kilo-dwim'.")
+
 (defvar copilot-cli-command-map
   (let ((map (make-sparse-keymap)))
     (define-key map "o" #'copilot-cli)
@@ -2888,10 +3370,50 @@ See `claude-dwim--rejoin' for why the session is named."
   "Keymap for the Copilot commands, bound to \\`C-c a o'.
 
 Claude has claude-code.el's map on \\`C-c c' and Antigravity has the
-lowercase letters of `ai-command-map'; the third agent gets a prefix of
-its own rather than a third case of every letter, and repeats
-Antigravity's letters under it -- so \\`C-c a o o' starts it, \\`C-c a o w'
-cuts a worktree, and so on.")
+lowercase letters of `ai-command-map'; every agent after those two gets a
+prefix of its own rather than another case of every letter, and repeats
+Antigravity's letters under it -- so \\`C-c a o o' starts Copilot,
+\\`C-c a o w' cuts a worktree, and so on.  `opencode-command-map' is the
+same again on \\`C-c a e'.")
+
+(defvar opencode-command-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "e" #'opencode)
+    (define-key map (kbd "RET") #'opencode)
+    (define-key map "d" #'opencode-dwim)
+    (define-key map "b" #'opencode-select-buffer)
+    (define-key map "s" #'opencode-tmux-switch)
+    (define-key map "k" #'opencode-tmux-kill)
+    (define-key map "w" #'opencode-wt)
+    (define-key map "p" #'opencode-pr)
+    (define-key map "r" #'opencode-resume)
+    map)
+  "Keymap for the opencode commands, bound to \\`C-c a e'.
+
+Copilot's `copilot-cli-command-map' laid out for a fourth agent.  The
+prefix is `e' because `o' went to Copilot first and `c', `p' and `d' to
+Claude, pull requests and the dwims: of the letters of opencode's own name
+still going spare it is the first.  \\`C-c a e e' starts the agent,
+\\`C-c a e w' cuts a worktree, and so on.")
+
+(defvar kilo-command-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "l" #'kilo)
+    (define-key map (kbd "RET") #'kilo)
+    (define-key map "d" #'kilo-dwim)
+    (define-key map "b" #'kilo-select-buffer)
+    (define-key map "s" #'kilo-tmux-switch)
+    (define-key map "k" #'kilo-tmux-kill)
+    (define-key map "w" #'kilo-wt)
+    (define-key map "p" #'kilo-pr)
+    (define-key map "r" #'kilo-resume)
+    map)
+  "Keymap for the kilo commands, bound to \\`C-c a l'.
+
+`opencode-command-map' laid out for a fifth agent.  The prefix is `l'
+because `k' is Antigravity's kill, `i' the session list and `o' Copilot:
+of the letters of kilo's own name it is the one left.  \\`C-c a l l'
+starts the agent, \\`C-c a l w' cuts a worktree, and so on.")
 
 (defvar ai-command-map
   (let ((map (make-sparse-keymap)))
@@ -2902,10 +3424,14 @@ cuts a worktree, and so on.")
     (define-key map "D" #'agy-dwim)
     ;; Claude keeps claude-code.el's own map on C-c c; this is only the way in.
     (define-key map "c" #'claude)
-    ;; Copilot, whose commands are one key further in: see
-    ;; `copilot-cli-command-map'.
+    ;; Copilot, opencode and kilo, whose commands are one key further in: see
+    ;; `copilot-cli-command-map', `opencode-command-map', `kilo-command-map'.
     (define-key map "o" copilot-cli-command-map)
     (define-key map "O" #'copilot-cli-dwim)
+    (define-key map "e" opencode-command-map)
+    (define-key map "E" #'opencode-dwim)
+    (define-key map "l" kilo-command-map)
+    (define-key map "L" #'kilo-dwim)
     ;; Antigravity, which has no map of its own.
     (define-key map "a" #'antigravity)
     (define-key map "b" #'antigravity-select-buffer)

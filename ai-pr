@@ -4,10 +4,10 @@
 #
 # `claude-pr 1290' puts pull request 1290 of the current repository in
 # ~/src/<repo>-pr1290 and runs claude there, so the agent can read, build, commit
-# and push the branch without touching the checkout you are reading.  `agy-pr'
-# and `copilot-pr' do the same with antigravity and Copilot.  Like ai-tmux and
-# ai-wt, one copy serves every agent and works out which one it is from the name
-# it was called by.
+# and push the branch without touching the checkout you are reading.  `agy-pr',
+# `copilot-pr', `opencode-pr' and `kilo-pr' do the same with antigravity, Copilot,
+# opencode and kilo.  Like ai-tmux and ai-wt, one copy serves every agent and
+# works out which one it is from the name it was called by.
 #
 # The worktree is a flat sibling of the repository even when this is run from
 # inside another worktree, and running it again for the same pull request
@@ -21,14 +21,17 @@
 # Usage: claude-pr [PR] [agent args...]
 #        agy-pr [PR] [agent args...]
 #        copilot-pr [PR] [agent args...]
+#        opencode-pr [PR] [agent args...]
+#        kilo-pr [PR] [agent args...]
 
 set -uo pipefail
 
 tool=$(basename -- "$0")
 tool=${tool%-pr}
 case $tool in
-    ''|ai) tool=${AI_TMUX_TOOL:-claude} ;;
-    agy)   tool=antigravity ;;
+    ''|ai)    tool=${AI_TMUX_TOOL:-claude} ;;
+    agy)      tool=antigravity ;;
+    kilocode) tool=kilo ;;
 esac
 
 die() { printf '%s-pr: %s\n' "$tool" "$*" >&2; exit 1; }
