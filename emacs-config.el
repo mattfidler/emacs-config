@@ -1184,6 +1184,67 @@
          (cons "author" ess-user-full-name)
          (cons "examples" ""))))
 
+;; Air formats R code, and speaks LSP to do it:
+;; https://posit-dev.github.io/air/editor-emacs.html
+;;
+;; eglot runs `air language-server' in every R file, so `M-x eglot-format'
+;; works on a buffer or a region anywhere.  Air formats and does nothing
+;; else, so eglot is kept out of flymake, xref, imenu and company: lintr still
+;; lints, and `M-.' still goes through ESS.
+;;
+;; Saving formats only inside a project with an air.toml (or .air.toml) --
+;; that file is how a package says it has moved over to Air.  Anywhere else,
+;; saving a one-line change would restyle the whole file and bury the change
+;; in the diff.
+(with-eval-after-load 'eglot
+  (add-to-list 'eglot-server-programs
+               '((ess-r-mode :language-id "r") . ("air" "language-server")))
+  (advice-add 'eglot-format :around #'my-air-indent-as-ess)
+  ;; polymode copies the file name into the R chunk buffers of an Rmd or
+  ;; qmd, so once Air is running for the project eglot adopts them on its
+  ;; own -- and `eglot-format' in a chunk then formats the whole document
+  ;; as R, which wrecks the markdown around it.  An indirect buffer is
+  ;; never eglot's to manage.
+  (advice-add 'eglot--maybe-activate-editing-mode :before-until
+              #'buffer-base-buffer))
+
+(defun my-air-indent-as-ess (format &rest args)
+  "Format R with ESS's indent as the tab size eglot hands the server.
+eglot sends `tab-width' -- 8 -- and Air follows it wherever no air.toml
+says otherwise, so R came back indented by 8 rather than 2."
+  (if (derived-mode-p 'ess-r-mode)
+      (let ((tab-width ess-indent-offset))
+        (apply format args))
+    (apply format args)))
+
+(defun my-air-project-p ()
+  "Non-nil when this buffer's directory sits under an air.toml or .air.toml."
+  (locate-dominating-file
+   default-directory
+   (lambda (dir)
+     (or (file-exists-p (expand-file-name "air.toml" dir))
+         (file-exists-p (expand-file-name ".air.toml" dir))))))
+
+(defun my-air-format-before-save ()
+  "Format the buffer with Air before saving, in a project that uses Air."
+  (when (and (eglot-managed-p) (my-air-project-p))
+    (eglot-format-buffer)))
+
+(defun my-air-eglot-ensure ()
+  "Start Air through eglot in an R file, when Air is installed.
+R chunks in Rmd, qmd and Rnw files are skipped: polymode keeps them in
+indirect buffers, which have no file of their own for a server to own.
+Remote files are skipped too, since air would have to be on that machine."
+  (when (and buffer-file-name
+             (not (buffer-base-buffer))
+             (not (file-remote-p buffer-file-name))
+             (executable-find "air"))
+    (setq-local eglot-stay-out-of '(flymake xref imenu company))
+    (eglot-ensure)
+    (add-hook 'before-save-hook #'my-air-format-before-save nil t)))
+
+(add-hook 'ess-r-mode-hook #'my-air-eglot-ensure)
+
 (when (version< "24.4" emacs-version)
   (use-package poly-R
     :ensure t)

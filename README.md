@@ -503,3 +503,36 @@ Emacs, so they survive it; `C-c a i` brings them back.
 emacsreset          # the daemon
 emacsreset NAME     # some other server, from `M-x server-start'
 ```
+
+## R formatting with Air
+
+[Air](https://posit-dev.github.io/air/) formats R code, and Emacs runs it
+through eglot as a language server.  `setup.sh` and `wsl.sh` install it into
+`~/.local/bin`; on a machine that already has Emacs:
+
+```sh
+curl -LsSf https://github.com/posit-dev/air/releases/latest/download/air-installer.sh | AIR_NO_MODIFY_PATH=1 sh
+```
+
+Every local R file starts `air language-server`, so `M-x eglot-format` formats
+the buffer, or the region when there is one, in any package.  Air does nothing
+but format, so eglot is kept away from what ESS already does: flymake still
+runs lintr, and `M-.` and imenu still go through ESS.  R chunks inside Rmd, qmd
+and Rnw files are left alone.  polymode keeps them in indirect buffers that
+borrow the document's file name, and eglot would otherwise adopt them once Air
+is running for the project -- after which `eglot-format` in a chunk formats the
+whole document as R and wrecks the markdown around it.  Where no `air.toml` sets the indent, Air takes it from the
+editor, and eglot offers `tab-width` -- 8 -- for that; `my-air-indent-as-ess`
+hands it `ess-indent-offset` instead, so R still comes back indented by 2.
+
+Saving formats the file only in a project with an `air.toml` (or `.air.toml`)
+at or above it.  That file is how a package says it has moved to Air, and it is
+also where the style lives -- `line-width`, `indent-width`, and `skip` for calls
+such as `ini()` and `model()` whose DSL formatting would mangle.  Without one,
+saving a one-line change in a package still on the old style would restyle the
+whole file and bury the change in the diff.  To move a package over, add the
+file and format it all at once, so the restyle lands as a commit of its own:
+
+```sh
+air format .
+```

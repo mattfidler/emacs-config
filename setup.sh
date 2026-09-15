@@ -331,3 +331,9 @@ install -m 600 gpg-agent.conf "${HOME}/.gnupg/gpg-agent.conf"
 gpg-connect-agent reloadagent /bye
 
 mkdir -p "${HOME}/.mail/gmail"
+
+# Air, the R formatter Emacs runs through eglot; see README.md.  It installs
+# into ~/.local/bin, which Ubuntu's ~/.profile puts on PATH and Emacs adds to
+# exec-path itself, so it is told to leave the shell profiles alone.
+
+curl -LsSf https://github.com/posit-dev/air/releases/latest/download/air-installer.sh | AIR_NO_MODIFY_PATH=1 sh

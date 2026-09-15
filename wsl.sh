@@ -355,3 +355,11 @@ cp  Makevars "${HOME}/.R/Makevars"
 mkdir -p "${HOME}/.ccache"
 
 cp ccache "${HOME}/.ccache/ccache.conf"
+
+# Air, the R formatter Emacs runs through eglot; see README.md.  It installs
+# into ~/.local/bin, which Ubuntu's ~/.profile puts on PATH and Emacs adds to
+# exec-path itself, so it is told to leave the shell profiles alone.
+
+mkdir -p "${HOME}/.local/bin"
+
+curl -LsSf https://github.com/posit-dev/air/releases/latest/download/air-installer.sh | AIR_NO_MODIFY_PATH=1 sh
