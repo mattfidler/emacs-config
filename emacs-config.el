@@ -2323,32 +2323,51 @@ siblings in ~/src even when this is asked for from inside another one."
                       "2>/dev/null"))
              "\n" t))))
 
-(defun ai-pr--read (prompt)
-  "Read one of this repository's open pull requests with PROMPT.
+(defun ai-gh--read (prompt items category)
+  "Read one of ITEMS, each (NUMBER AUTHOR TITLE), with PROMPT.
 
-Returns the number as a string.  Anything that is not a number is taken
-as one anyway, so a pull request that `gh' did not list -- a closed one,
-or one in a repository it cannot reach -- can still be typed in."
-  (let* ((pulls (ai-pr--open))
-         (width (apply #'max 1 (mapcar (lambda (p) (length (car p))) pulls)))
+Returns the number as a string.  Anything that is not listed is taken as
+one anyway, so something `gh' did not list -- a closed one, or one in a
+repository it cannot reach -- can still be typed in.  CATEGORY is the
+completion category, for whatever annotates or acts on candidates."
+  (let* ((width (apply #'max 1 (mapcar (lambda (p) (length (car p))) items)))
          (table
           (lambda (string pred action)
             (if (eq action 'metadata)
                 `(metadata
-                  (category . ai-pull-request)
+                  (category . ,category)
                   ;; gh hands them over newest first; keep that.
                   (display-sort-function . identity)
                   (cycle-sort-function . identity)
                   (annotation-function
                    . ,(lambda (cand)
-                        (let ((pull (assoc cand pulls)))
+                        (let ((item (assoc cand items)))
                           (concat (make-string (1+ (- width (length cand))) ?\s)
-                                  (propertize (or (nth 2 pull) "")
+                                  (propertize (or (nth 2 item) "")
                                               'face 'completions-annotations)
-                                  (and (nth 1 pull)
-                                       (concat "  " (nth 1 pull))))))))
-              (complete-with-action action pulls string pred)))))
+                                  (and (nth 1 item)
+                                       (concat "  " (nth 1 item))))))))
+              (complete-with-action action items string pred)))))
     (string-trim (completing-read prompt table nil nil))))
+
+(defun ai-pr--read (prompt)
+  "Read one of this repository's open pull requests with PROMPT.
+
+Returns the number as a string; see `ai-gh--read'."
+  (ai-gh--read prompt (ai-pr--open) 'ai-pull-request))
+
+(defun ai-gh--number (what thing)
+  "The number in THING, a number, a #number or the URL of one.
+WHAT names it in the error when THING is none of those."
+  ;; Stripped in that order rather than as one alternation: the leading-#
+  ;; branch matches the empty string, and a zero-width match at position 0
+  ;; leaves the first character behind.
+  (let* ((thing (string-trim thing))
+         (thing (replace-regexp-in-string "\\`.*/" "" thing))
+         (thing (replace-regexp-in-string "\\`#+" "" thing)))
+    (unless (string-match-p "\\`[0-9]+\\'" thing)
+      (user-error "Not %s number: %s" what thing))
+    thing))
 
 (defun ai-pr--worktree (pr)
   "Return a worktree of this repository holding pull request PR, making it if needed.
@@ -2358,14 +2377,7 @@ request from a fork and how to set the branch up so that pushing it goes
 back to the right place.  An existing worktree is re-entered -- which,
 since the agents run under tmux, re-attaches to the conversation already
 living there."
-  ;; A number, a #number, or the URL of one.  Stripped in that order rather
-  ;; than as one alternation: the leading-# branch matches the empty string,
-  ;; and a zero-width match at position 0 leaves the first character behind.
-  (let* ((pr (string-trim pr))
-         (pr (replace-regexp-in-string "\\`.*/" "" pr))
-         (pr (replace-regexp-in-string "\\`#+" "" pr))
-         (_ (unless (string-match-p "\\`[0-9]+\\'" pr)
-              (user-error "Not a pull request number: %s" pr)))
+  (let* ((pr (ai-gh--number "a pull request" pr))
          (root (directory-file-name (ai-pr--root)))
          (worktree (expand-file-name
                     (format "%s-pr%s" (file-name-nondirectory root) pr)
@@ -2385,6 +2397,175 @@ living there."
           (ai-wt--git root "worktree" "remove" "--force" "--" worktree)
           (user-error "Could not check out pull request %s" pr)))))
     (file-name-as-directory worktree)))
+
+;;;; An issue, in a worktree of its own
+;;
+;; The pull request commands' other half: rather than pick up a branch someone
+;; has already pushed, cut one for an issue and hand the agent the whole job --
+;; fix it, keep the branch mergeable, get it reviewed by a different model, and
+;; open the pull request at the end.
+
+(defcustom ai-reviewer "agy"
+  "The agent asked to review an issue's fix before its pull request opens.
+
+Named in `ai-issue-prompt' as the independent reviewer to prefer, and
+reached through its code-review skill -- so \"agy\" for the
+antigravity-code-review skill, \"copilot\" or \"kilo\" for theirs."
+  :type 'string
+  :group 'tools)
+
+(defcustom ai-issue-prompt
+  (concat "Can you fix issue #%i, committing and pushing often, for each "
+          "commit if origin/%t has moved, merge the commit with origin/%t "
+          "so it will be ready to review once the fix is complete.  Once the "
+          "fix is complete, review with an independent reviewer (preferring "
+          "%r with skill) until no issues remain.  Once the review is clean "
+          "open a pull request to fix the issue")
+  "What an agent started on an issue is asked to do.
+
+%i is replaced by the issue number, %r by `ai-reviewer' and %t by the
+trunk branch the worktree was cut from -- main, or master where that is
+what the repository has."
+  :type 'string
+  :group 'tools)
+
+(defcustom ai-issue-quiet-seconds 3
+  "How long an agent's terminal must be still before it is taken to be waiting.
+
+There is no telling from outside when a terminal program is ready for
+input, so `ai-issue--send-when-ready' waits for it to draw something and
+then stop: the agent's prompt, sitting there with the cursor in it."
+  :type 'number
+  :group 'tools)
+
+(defcustom ai-issue-ready-timeout 120
+  "Seconds to wait for an agent to settle before giving up on sending it anything."
+  :type 'number
+  :group 'tools)
+
+(defun ai-issue--open ()
+  "The repository's open issues, as (NUMBER AUTHOR TITLE), newest first."
+  (let ((default-directory (ai-pr--root)))
+    (mapcar (lambda (line) (split-string line "\t"))
+            (split-string
+             (shell-command-to-string
+              (concat "gh issue list --limit 50 "
+                      "--json number,author,title "
+                      "--jq '.[] | \"\\(.number)\\t\\(.author.login)\\t\\(.title)\"' "
+                      "2>/dev/null"))
+             "\n" t))))
+
+(defun ai-issue--read (prompt)
+  "Read one of this repository's open issues with PROMPT, and what to ask of it.
+
+Returns a list (ISSUE TEXT) for an interactive spec.  TEXT is nil, which
+means `ai-issue-prompt', unless there is a prefix argument: then the
+prompt is offered for editing first, with the issue already filled in."
+  (let ((issue (ai-gh--read prompt (ai-issue--open) 'ai-issue)))
+    (list issue
+          (and current-prefix-arg
+               (read-string "Ask the agent: "
+                            (ai-issue--prompt (ai-gh--number "an issue" issue)))))))
+
+(defun ai-issue--prompt (number)
+  "`ai-issue-prompt' for issue NUMBER."
+  (format-spec ai-issue-prompt
+               `((?i . ,number) (?r . ,ai-reviewer)
+                 (?t . ,(or (ai-wt--trunk (ai-pr--root)) "main")))))
+
+(defun ai-issue--worktree (issue)
+  "Return a worktree of this repository for fixing ISSUE, making it if needed.
+
+The worktree is ~/src/<repo>-issue<N>, a flat sibling of the repository
+like the pull request ones, on a branch issue-<N> cut from the freshly
+fetched trunk on origin -- not from whatever HEAD happens to be, since
+the fix is going to be merged back there.  An existing branch of that
+name is checked out rather than recreated, and an existing worktree is
+simply re-entered."
+  (let* ((issue (ai-gh--number "an issue" issue))
+         (root (directory-file-name (ai-pr--root)))
+         (branch (concat "issue-" issue))
+         (worktree (expand-file-name
+                    (format "%s-issue%s" (file-name-nondirectory root) issue)
+                    (file-name-directory root))))
+    (cond
+     ((file-directory-p worktree)
+      (message "Re-using existing worktree %s" worktree))
+     ((file-exists-p worktree)
+      (user-error "%s exists and is not a directory" worktree))
+     ((ai-wt--branch-p root branch)
+      (ai-wt--git root "worktree" "add" "--" worktree branch))
+     (t
+      (let ((trunk (or (ai-wt--trunk root)
+                       (user-error "Cannot tell what the trunk of %s is" root))))
+        (ai-wt--git root "fetch" "origin" trunk)
+        (ai-wt--git root "worktree" "add" "--no-track" "-b" branch
+                    "--" worktree (concat "origin/" trunk)))))
+    (file-name-as-directory worktree)))
+
+(defun ai-issue--send-when-ready (buffer text)
+  "Type TEXT into the eat terminal in BUFFER once it is waiting for input.
+
+Waiting means it has drawn something and then been still for
+`ai-issue-quiet-seconds'.  TEXT goes in first and the return that submits
+it a moment later, so an agent that reads a burst of input as a paste
+does not take the return for a newline in it.  After
+`ai-issue-ready-timeout' seconds of an agent that never settles, give up
+and leave TEXT on the kill ring to be yanked in by hand."
+  ;; This file is loaded without lexical-binding, so a lambda here would not
+  ;; close over anything: the timer carries its state as an argument instead,
+  ;; (BUFFER TEXT STARTED TICK STILL-SINCE TIMER).
+  (let ((state (list buffer text (float-time) nil nil nil)))
+    (setf (nth 5 state) (run-with-timer 0.5 0.5 #'ai-issue--poll state))))
+
+(defun ai-issue--poll (state)
+  "One look at the terminal `ai-issue--send-when-ready' is waiting on.
+STATE is (BUFFER TEXT STARTED TICK STILL-SINCE TIMER), updated in place."
+  (pcase-let ((`(,buffer ,text ,started ,tick ,still-since ,timer) state))
+    (cond
+     ((not (buffer-live-p buffer))
+      (cancel-timer timer))
+     ((> (- (float-time) started) ai-issue-ready-timeout)
+      (cancel-timer timer)
+      (kill-new text)
+      (message "%s never settled; the prompt is on the kill ring"
+               (buffer-name buffer)))
+     ;; Nothing drawn yet, or still drawing: start the count again.
+     ((not (equal (buffer-modified-tick buffer) tick))
+      (setf (nth 3 state) (buffer-modified-tick buffer)
+            (nth 4 state) (float-time)))
+     ((and (> (buffer-size buffer) 0)
+           (>= (- (float-time) still-since) ai-issue-quiet-seconds))
+      (cancel-timer timer)
+      (ai-issue--type buffer text)
+      (run-with-timer 0.5 nil #'ai-issue--type buffer "\r")))))
+
+(defun ai-issue--type (buffer string)
+  "Send STRING to the eat terminal in BUFFER, if it is still there."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (eat-term-send-string eat-terminal string))))
+
+(defun ai-issue--start (agent start issue &optional text)
+  "Set AGENT to work on ISSUE, in a worktree of its own.
+
+START is called with the worktree and returns the agent's eat buffer.
+AGENT names its tmux server, which is how an agent already at work on
+the issue is found: that conversation is re-entered and left to get on
+with it, rather than asked to start the fix again.  Otherwise it is
+asked for TEXT, or `ai-issue-prompt' when that is nil, once it is ready."
+  (let* ((number (ai-gh--number "an issue" issue))
+         (worktree (ai-issue--worktree number))
+         (running (ai-tmux--session-for-directory agent worktree))
+         (buffer (funcall start worktree)))
+    (if running
+        (message "%s is already working in %s; nothing sent"
+                 (capitalize agent) (abbreviate-file-name worktree))
+      ;; An edit cleared to nothing means the default, not a bare return.
+      (ai-issue--send-when-ready buffer (if (and text (not (string-blank-p text)))
+                                            text
+                                          (ai-issue--prompt number))))
+    (pop-to-buffer buffer)))
 
 ;;;; Claude
 
@@ -2539,6 +2720,27 @@ read, build, commit and push the branch while the checkout being read
 stays as it was.  See `ai-pr--worktree'."
   (interactive (list (ai-pr--read "Claude on pull request: ")))
   (claude-code--start-in (ai-pr--worktree pr)))
+
+(defun claude-issue (issue &optional text)
+  "Start Claude fixing ISSUE of this repository, in a worktree of its own.
+
+The worktree is ~/src/<repo>-issue<ISSUE>, on a branch cut from the
+trunk, and once Claude is waiting for input it is asked for
+`ai-issue-prompt': fix the issue, keep the branch merged with the
+trunk, have `ai-reviewer' review it, and open the pull request.  With a
+prefix argument, edit what it is asked first; TEXT is that, from Lisp.
+See `ai-issue--start'."
+  (interactive (ai-issue--read "Claude on issue: "))
+  (require 'claude-code)
+  (ai-issue--start
+   "claude"
+   (lambda (dir)
+     (let ((before (claude-code--find-claude-buffers-for-directory dir)))
+       (claude-code--start-in dir)
+       (let ((after (claude-code--find-claude-buffers-for-directory dir)))
+         (or (car (cl-set-difference after before)) (car after)
+             (error "No Claude buffer came up in %s" dir)))))
+   issue text))
 
 ;;;; Antigravity
 ;;
@@ -2759,6 +2961,13 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   (interactive (list (ai-pr--read "Antigravity on pull request: ")))
   (pop-to-buffer (antigravity--start (ai-pr--worktree pr))))
 
+(defun agy-issue (issue &optional text)
+  "Start Antigravity fixing ISSUE of this repository, in a worktree of its own.
+
+`claude-issue' for the other agent; see `ai-issue--start'."
+  (interactive (ai-issue--read "Antigravity on issue: "))
+  (ai-issue--start "antigravity" #'antigravity--start issue text))
+
 ;;;; agy
 ;;
 ;; The CLI is called agy, and so are the two commands that were written with it
@@ -2898,6 +3107,13 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
 `claude-pr' for the other agent; see `ai-pr--worktree'."
   (interactive (list (ai-pr--read "Copilot on pull request: ")))
   (pop-to-buffer (copilot-cli--start (ai-pr--worktree pr))))
+
+(defun copilot-cli-issue (issue &optional text)
+  "Start Copilot fixing ISSUE of this repository, in a worktree of its own.
+
+`claude-issue' for the other agent; see `ai-issue--start'."
+  (interactive (ai-issue--read "Copilot on issue: "))
+  (ai-issue--start "copilot" #'copilot-cli--start issue text))
 
 ;;;; opencode
 ;;
@@ -3071,6 +3287,13 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   (interactive (list (ai-pr--read "opencode on pull request: ")))
   (pop-to-buffer (opencode--start (ai-pr--worktree pr))))
 
+(defun opencode-issue (issue &optional text)
+  "Start opencode fixing ISSUE of this repository, in a worktree of its own.
+
+`claude-issue' for the other agent; see `ai-issue--start'."
+  (interactive (ai-issue--read "opencode on issue: "))
+  (ai-issue--start "opencode" #'opencode--start issue text))
+
 ;;;; kilo
 ;;
 ;; kilo is opencode's fork, and it shows: `kilo' takes the same switches as
@@ -3243,6 +3466,13 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   (interactive (list (ai-pr--read "kilo on pull request: ")))
   (pop-to-buffer (kilo--start (ai-pr--worktree pr))))
 
+(defun kilo-issue (issue &optional text)
+  "Start kilo fixing ISSUE of this repository, in a worktree of its own.
+
+`claude-issue' for the other agent; see `ai-issue--start'."
+  (interactive (ai-issue--read "kilo on issue: "))
+  (ai-issue--start "kilo" #'kilo--start issue text))
+
 ;;;; kilocode
 ;;
 ;; The CLI answers to both names, so the commands do too -- `M-x kilocode' finds
@@ -3255,7 +3485,8 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
                 (kilocode-tmux-switch   . kilo-tmux-switch)
                 (kilocode-tmux-kill     . kilo-tmux-kill)
                 (kilocode-wt            . kilo-wt)
-                (kilocode-pr            . kilo-pr)))
+                (kilocode-pr            . kilo-pr)
+                (kilocode-issue         . kilo-issue)))
   (defalias (car pair) (cdr pair)
     (format "Alias for `%s'." (cdr pair))))
 
@@ -3426,6 +3657,7 @@ See `claude-dwim--rejoin' for why the session is named."
     (define-key map "k" #'copilot-cli-tmux-kill)
     (define-key map "w" #'copilot-cli-wt)
     (define-key map "p" #'copilot-cli-pr)
+    (define-key map "n" #'copilot-cli-issue)
     (define-key map "r" #'copilot-cli-resume)
     map)
   "Keymap for the Copilot commands, bound to \\`C-c a o'.
@@ -3447,6 +3679,7 @@ same again on \\`C-c a e'.")
     (define-key map "k" #'opencode-tmux-kill)
     (define-key map "w" #'opencode-wt)
     (define-key map "p" #'opencode-pr)
+    (define-key map "n" #'opencode-issue)
     (define-key map "r" #'opencode-resume)
     map)
   "Keymap for the opencode commands, bound to \\`C-c a e'.
@@ -3467,6 +3700,7 @@ still going spare it is the first.  \\`C-c a e e' starts the agent,
     (define-key map "k" #'kilo-tmux-kill)
     (define-key map "w" #'kilo-wt)
     (define-key map "p" #'kilo-pr)
+    (define-key map "n" #'kilo-issue)
     (define-key map "r" #'kilo-resume)
     map)
   "Keymap for the kilo commands, bound to \\`C-c a l'.
@@ -3502,6 +3736,9 @@ starts the agent, \\`C-c a l w' cuts a worktree, and so on.")
     ;; A pull request, in a worktree of its own.
     (define-key map "p" #'claude-pr)
     (define-key map "P" #'agy-pr)
+    ;; An issue, in a worktree of its own, with the agent asked to fix it.
+    (define-key map "n" #'claude-issue)
+    (define-key map "N" #'agy-issue)
     ;; A conversation whose session is gone: back in through the agent's own
     ;; history rather than tmux's.
     (define-key map "r" #'claude-resume)

@@ -249,6 +249,7 @@ repeated under it:
 | end a background tmux session | `M-x claude-tmux-kill` | `C-c a k` | `C-c a o k` | `C-c a e k` | `C-c a l k` |
 | start on a fresh git worktree | `M-x claude-wt` | `C-c a w` | `C-c a o w` | `C-c a e w` | `C-c a l w` |
 | work on a pull request | `C-c a p` | `C-c a P` | `C-c a o p` | `C-c a e p` | `C-c a l p` |
+| fix an issue, through to a pull request | `C-c a n` | `C-c a N` | `C-c a o n` | `C-c a e n` | `C-c a l n` |
 | re-open a conversation the agent remembers | `C-c a r` | `C-c a R` | `C-c a o r` | `C-c a e r` | `C-c a l r` |
 | ...from another directory | `C-u C-u C-c c R` (asks which) | `C-u C-c a R` (lists all) | -- | `C-u C-c a e r` (this project) | `C-u C-c a l r` (lists all) |
 
@@ -379,6 +380,25 @@ or the URL of one all work, so a closed pull request can still be typed in.  The
 worktree is `~/src/<repo>-pr<N>` -- a flat sibling of the repository even when
 asked for from inside another worktree -- and asking again for the same one
 re-enters it, which re-attaches to the conversation already living there.
+
+### Issues
+
+`C-c a n` (`claude-issue`), `C-c a N` (`agy-issue`), `C-c a o n`
+(`copilot-cli-issue`), `C-c a e n` (`opencode-issue`) and `C-c a l n`
+(`kilo-issue`) are the other half: rather than pick up a branch someone has
+pushed, they cut one for an issue and hand the agent the whole job.  Asking
+completes over the repository's open issues the way the pull request commands
+complete over pull requests, and takes a number, a `#number` or a URL.
+
+The worktree is `~/src/<repo>-issue<N>` on a branch `issue-<N>`, cut from a
+freshly fetched `origin/main` (or whatever origin's trunk is) rather than from
+HEAD.  Once the agent's terminal has drawn its prompt and gone quiet for
+`ai-issue-quiet-seconds`, it is asked for `ai-issue-prompt`: fix the issue,
+committing and pushing often and merging `origin/main` in whenever it has moved,
+then have an independent reviewer -- `ai-reviewer`, `agy` by default, through its
+code-review skill -- go over it until it comes back clean, and open the pull
+request.  `C-u` first lets you edit what it is asked.  Asking again for an issue
+whose agent is still running re-attaches to it without asking a second time.
 
 `agy` works as a name for antigravity throughout, since that is what the CLI is
 called.  On the shell `agy-pr`, `agy-wt` and `agy-tmux` are the same scripts as
