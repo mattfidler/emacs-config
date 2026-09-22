@@ -6,8 +6,8 @@
 # there, and once claude is waiting for input asks it to fix the issue: commit
 # and push often, keep the branch merged with the trunk, get a clean review from
 # an independent reviewer, and open the pull request.  `agy-issue',
-# `copilot-issue', `opencode-issue' and `kilo-issue' do the same with
-# antigravity, Copilot, opencode and kilo.  Like ai-tmux, ai-wt and ai-pr, one
+# `copilot-issue', `opencode-issue', `kilo-issue' and `codex-issue' do the same
+# with antigravity, Copilot, opencode, kilo and Codex.  Like ai-tmux, ai-wt and ai-pr, one
 # copy serves every agent and works out which one it is from the name it was
 # called by.  This is the shell's `claude-issue' and friends in emacs-config.el.
 #
@@ -28,6 +28,7 @@
 #        copilot-issue [ISSUE] [agent args...]
 #        opencode-issue [ISSUE] [agent args...]
 #        kilo-issue [ISSUE] [agent args...]
+#        codex-issue [ISSUE] [agent args...]
 #
 # Environment:
 #   AI_REVIEWER       the independent reviewer to prefer (default: agy)

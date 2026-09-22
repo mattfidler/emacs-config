@@ -435,6 +435,7 @@
      ("C" "copilot" copilot-cli-dwim)
      ("O" "opencode" opencode-dwim)
      ("K" "kilo" kilo-dwim)
+     ("X" "codex" codex-dwim)
      ])
   ;;(define-key ergoemacs-override-keymap (kbd "<menu> k") nil)
   ;;(define-key ergoemacs-override-keymap (kbd "<apps> k") nil)
@@ -1674,12 +1675,12 @@ With a mouse EVENT, act on the terminal under the pointer."
 ;; Every agent here runs the same way: an eat buffer showing a client attached to
 ;; a detachable tmux session of the agent's own (~/.local/bin/ai-tmux, installed
 ;; once per agent as claude-tmux, antigravity-tmux, copilot-tmux, opencode-tmux,
-;; kilo-tmux), so a conversation outlives both a dropped ssh connection and an
+;; kilo-tmux, codex-tmux), so a conversation outlives both a dropped ssh connection and an
 ;; Emacs restart, and starting the agent again in the same directory re-attaches
 ;; to it.
 ;;
 ;; claude-code.el is the Emacs half for Claude; the much smaller half the other
-;; four need is below.  Everything that is not particular to one agent -- which
+;; five need is below.  Everything that is not particular to one agent -- which
 ;; directory a buffer belongs to, the theme to start in, listing and switching to
 ;; and ending background sessions, cutting a worktree to start one in -- is
 ;; shared, and each agent's commands are a few lines on top of it.
@@ -1703,8 +1704,8 @@ belongs to without having to load claude-code.el to ask."
 
 ;;;; A terminal for an agent that has no Emacs package
 ;;
-;; claude-code.el is all of this for Claude.  Antigravity, Copilot, opencode and
-;; kilo have no package, and want the same few things: name a buffer after the
+;; claude-code.el is all of this for Claude.  Antigravity, Copilot, opencode,
+;; kilo and Codex have no package, and want the same few things: name a buffer after the
 ;; directory the agent works in, find the ones already running, and start another
 ;; on that agent's <agent>-tmux.  So here they are once, taking the agent as an
 ;; argument, and each agent's own commands are a line apiece on top.
@@ -1780,7 +1781,7 @@ they are dropped: ask for one or the other, not both."
          (default-directory directory)
          (name (ai-term--unused-buffer-name agent directory))
          ;; CLAUDE_TMUX_*, ANTIGRAVITY_TMUX_*, COPILOT_TMUX_*, OPENCODE_TMUX_*,
-         ;; KILO_TMUX_*: the same name ai-tmux derives from the agent it was
+         ;; KILO_TMUX_*, CODEX_TMUX_*: the same name ai-tmux derives from the agent it was
          ;; called as.
          (prefix (upcase (replace-regexp-in-string "-" "_" agent)))
          ;; Without this the terminal flickers while the agent redraws.
@@ -1953,7 +1954,8 @@ conversation still belongs to the project."
     ("antigravity" . antigravity-tmux--attach)
     ("copilot" . copilot-cli-tmux--attach)
     ("opencode" . opencode-tmux--attach)
-    ("kilo" . kilo-tmux--attach))
+    ("kilo" . kilo-tmux--attach)
+    ("codex" . codex-tmux--attach))
   "The agents that keep their sessions on a tmux server of their own.
 
 Each element is (SOCKET . ATTACH), where SOCKET names the tmux server --
@@ -3490,6 +3492,129 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   (defalias (car pair) (cdr pair)
     (format "Alias for `%s'." (cdr pair))))
 
+;;;; Codex
+;;
+;; OpenAI's `codex' CLI is one more terminal program with no Emacs package, so
+;; it is the shared code above plus the name of the program, like Copilot.  It
+;; has a picker of its own for past conversations, `codex resume', which by
+;; default lists the ones started in this directory and with --all every one --
+;; so there is nothing here to read its history for.
+
+(defgroup codex nil
+  "Run OpenAI's `codex' CLI in an Emacs terminal."
+  :group 'tools)
+
+(defcustom codex-program "codex-tmux"
+  "Program `codex' runs in an eat terminal.
+
+The default, ~/.local/bin/codex-tmux, is ~/.local/bin/ai-tmux under the
+name that makes it run `codex' in a detachable tmux session; set this to
+\"codex\" to run the CLI directly and lose the conversation with the
+buffer."
+  :type 'string
+  :group 'codex)
+
+(defun codex--start (directory &optional session switches)
+  "Open a Codex terminal working in DIRECTORY and return its buffer.
+
+SESSION and SWITCHES mean what they do in `ai-term--start', which this is
+Codex's name for."
+  (ai-term--start "codex" codex-program directory session switches))
+
+(defun codex (&optional arg)
+  "Attach to this project's Codex session, starting one if needed.
+
+Re-uses the running Codex buffer for the current project when there is
+one, so this is also the way back in after an Emacs restart or a dropped
+ssh connection.  With prefix ARG, always start a new instance."
+  (interactive "P")
+  (let* ((dir (ai-term--directory))
+         (buffers (and (null arg) dir
+                       (ai-term--buffers-for-directory "codex" dir))))
+    (pop-to-buffer
+     (if buffers
+         (ai-term--read-buffer "Codex buffer: " buffers)
+       (codex--start dir)))))
+
+(defun codex-resume (&optional arg)
+  "Start Codex on one of the conversations it has had here.
+
+`codex resume': the CLI lists the sessions it remembers from this
+directory and re-opens the one you pick, the way `claude --resume' does
+-- which is the way back to a conversation whose tmux session is gone,
+after a reboot or a `codex-tmux-kill'.  With prefix ARG it lists every
+directory's.  Use `codex' for the one running right now.
+
+The resumed conversation gets a tmux session of its own, so the one
+already running here, if any, is left alone."
+  (interactive "P")
+  (pop-to-buffer (codex--start (ai-term--directory) nil
+                               (if arg '("resume" "--all") '("resume")))))
+
+(defun codex-select-buffer ()
+  "Switch to one of the Codex terminals running in this Emacs."
+  (interactive)
+  (let ((buffers (or (ai-term--all-buffers "codex")
+                     (user-error "No Codex buffers"))))
+    (pop-to-buffer (ai-term--read-buffer "Codex buffer: " buffers))))
+
+(defun codex-tmux-switch (session)
+  "Attach to a background codex tmux SESSION in this Emacs.
+
+Lists every session on the codex tmux server -- including ones started
+from another Emacs, another machine's ssh connection, or a plain terminal
+-- and re-attaches to the one you pick.  When this Emacs is already
+showing that session, pop to its buffer instead of attaching a second
+client to it."
+  (interactive (list (ai-tmux--read-session "codex" "Codex session: ")))
+  (codex-tmux--attach session))
+
+(defun codex-tmux--attach (session)
+  "Show the codex tmux SESSION, (NAME DIRECTORY ATTACHED), in this Emacs."
+  (pcase-let* ((`(,name ,dir ,attached) session)
+               (dir (and dir (file-name-as-directory dir)))
+               (live (and attached dir (file-directory-p dir)
+                          (ai-term--buffers-for-directory "codex" dir))))
+    (pop-to-buffer
+     (if live
+         (ai-term--read-buffer "Codex buffer: " live)
+       ;; codex-tmux re-attaches to CODEX_TMUX_SESSION when it exists, so name
+       ;; the session explicitly rather than relying on it being derivable from
+       ;; the directory (which may be gone, or shared by several sessions).
+       (codex--start (if (and dir (file-directory-p dir))
+                         dir
+                       default-directory)
+                     name)))))
+
+(defun codex-tmux-kill (session)
+  "End the background codex tmux SESSION.
+
+Killing a Codex buffer only detaches from tmux -- the agent keeps running
+so it can be re-attached.  Use this to actually stop it."
+  (interactive (list (ai-tmux--read-session "codex" "End codex session: ")))
+  (ai-tmux--kill "codex" session))
+
+(defun codex-wt (name)
+  "Start Codex on a fresh git worktree of this repository, named NAME.
+
+See `ai-wt--worktree' for how the worktree and its branch are chosen."
+  (interactive (list (read-string "Worktree/branch name: ")))
+  (pop-to-buffer (codex--start (ai-wt--worktree name))))
+
+(defun codex-pr (pr)
+  "Start Codex on pull request PR of this repository, in its own worktree.
+
+`claude-pr' for the other agent; see `ai-pr--worktree'."
+  (interactive (list (ai-pr--read "Codex on pull request: ")))
+  (pop-to-buffer (codex--start (ai-pr--worktree pr))))
+
+(defun codex-issue (issue &optional text)
+  "Start Codex fixing ISSUE of this repository, in a worktree of its own.
+
+`claude-issue' for the other agent; see `ai-issue--start'."
+  (interactive (ai-issue--read "Codex on issue: "))
+  (ai-issue--start "codex" #'codex--start issue text))
+
 ;;;; One key for all of it
 ;;
 ;; The three things worth doing with an agent depend entirely on where you are
@@ -3647,6 +3772,27 @@ See `claude-dwim--rejoin' for why the session is named."
 ;; this one is defined here, after that block, so it is aliased here.
 (defalias 'kilocode-dwim 'kilo-dwim "Alias for `kilo-dwim'.")
 
+(defun codex-dwim--rejoin ()
+  "Show this directory's Codex conversation, or return nil for none.
+
+See `claude-dwim--rejoin' for why the session is named."
+  (let* ((dir (ai-term--directory))
+         (buffers (and dir (ai-term--buffers-for-directory "codex" dir)))
+         (session (and dir (null buffers)
+                       (ai-tmux--session-for-directory "codex" dir))))
+    (cond
+     (buffers (pop-to-buffer (ai-term--read-buffer "Codex buffer: " buffers))
+              t)
+     (session (pop-to-buffer (codex--start dir (nth 0 session))) t))))
+
+(defun codex-dwim ()
+  "Do the useful thing with Codex for wherever this was called from.
+
+`claude-dwim' for the other agent; see `ai-dwim' for what it decides."
+  (interactive)
+  (ai-dwim #'codex-dwim--rejoin
+           (lambda () (call-interactively #'codex-wt))))
+
 (defvar copilot-cli-command-map
   (let ((map (make-sparse-keymap)))
     (define-key map "o" #'copilot-cli)
@@ -3710,6 +3856,26 @@ because `k' is Antigravity's kill, `i' the session list and `o' Copilot:
 of the letters of kilo's own name it is the one left.  \\`C-c a l l'
 starts the agent, \\`C-c a l w' cuts a worktree, and so on.")
 
+(defvar codex-command-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "x" #'codex)
+    (define-key map (kbd "RET") #'codex)
+    (define-key map "d" #'codex-dwim)
+    (define-key map "b" #'codex-select-buffer)
+    (define-key map "s" #'codex-tmux-switch)
+    (define-key map "k" #'codex-tmux-kill)
+    (define-key map "w" #'codex-wt)
+    (define-key map "p" #'codex-pr)
+    (define-key map "n" #'codex-issue)
+    (define-key map "r" #'codex-resume)
+    map)
+  "Keymap for the Codex commands, bound to \\`C-c a x'.
+
+`kilo-command-map' laid out for a sixth agent.  The prefix is `x'
+because `c' is Claude, `o' Copilot, `d' the dwims and `e' opencode: of
+the letters of codex's own name it is the one left.  \\`C-c a x x'
+starts the agent, \\`C-c a x w' cuts a worktree, and so on.")
+
 (defvar ai-command-map
   (let ((map (make-sparse-keymap)))
     ;; Across every agent.
@@ -3719,14 +3885,17 @@ starts the agent, \\`C-c a l w' cuts a worktree, and so on.")
     (define-key map "D" #'agy-dwim)
     ;; Claude keeps claude-code.el's own map on C-c c; this is only the way in.
     (define-key map "c" #'claude)
-    ;; Copilot, opencode and kilo, whose commands are one key further in: see
-    ;; `copilot-cli-command-map', `opencode-command-map', `kilo-command-map'.
+    ;; Copilot, opencode, kilo and Codex, whose commands are one key further
+    ;; in: see `copilot-cli-command-map', `opencode-command-map',
+    ;; `kilo-command-map', `codex-command-map'.
     (define-key map "o" copilot-cli-command-map)
     (define-key map "O" #'copilot-cli-dwim)
     (define-key map "e" opencode-command-map)
     (define-key map "E" #'opencode-dwim)
     (define-key map "l" kilo-command-map)
     (define-key map "L" #'kilo-dwim)
+    (define-key map "x" codex-command-map)
+    (define-key map "X" #'codex-dwim)
     ;; Antigravity, which has no map of its own.
     (define-key map "a" #'antigravity)
     (define-key map "b" #'antigravity-select-buffer)

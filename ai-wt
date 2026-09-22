@@ -4,9 +4,9 @@
 # Working in ~/src/dir, `claude-wt feature-x' creates the branch feature-x in
 # ~/src/dir-feature-x and runs claude there, so an agent can churn on its own
 # checkout while ~/src/dir stays exactly as you left it.  `antigravity-wt',
-# `copilot-wt', `opencode-wt' and `kilo-wt' do the same for those agents: like
-# ai-tmux, one copy serves every agent and works out which one from the name it
-# was called by.
+# `copilot-wt', `opencode-wt', `kilo-wt' and `codex-wt' do the same for those
+# agents: like ai-tmux, one copy serves every agent and works out which one from
+# the name it was called by.
 #
 # With no argument it asks for the worktree/branch name.  The branch is cut
 # from the current HEAD; an existing branch of that name is checked out
@@ -20,6 +20,7 @@
 #        copilot-wt [NAME] [agent args...]
 #        opencode-wt [NAME] [agent args...]
 #        kilo-wt [NAME] [agent args...]
+#        codex-wt [NAME] [agent args...]
 
 set -uo pipefail
 

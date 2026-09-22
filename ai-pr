@@ -5,8 +5,8 @@
 # `claude-pr 1290' puts pull request 1290 of the current repository in
 # ~/src/<repo>-pr1290 and runs claude there, so the agent can read, build, commit
 # and push the branch without touching the checkout you are reading.  `agy-pr',
-# `copilot-pr', `opencode-pr' and `kilo-pr' do the same with antigravity, Copilot,
-# opencode and kilo.  Like ai-tmux and ai-wt, one copy serves every agent and
+# `copilot-pr', `opencode-pr', `kilo-pr' and `codex-pr' do the same with
+# antigravity, Copilot, opencode, kilo and Codex.  Like ai-tmux and ai-wt, one copy serves every agent and
 # works out which one it is from the name it was called by.
 #
 # The worktree is a flat sibling of the repository even when this is run from
@@ -23,6 +23,7 @@
 #        copilot-pr [PR] [agent args...]
 #        opencode-pr [PR] [agent args...]
 #        kilo-pr [PR] [agent args...]
+#        codex-pr [PR] [agent args...]
 
 set -uo pipefail
 

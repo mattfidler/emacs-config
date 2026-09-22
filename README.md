@@ -119,7 +119,7 @@ point `mu4e-refile-folder` at it, and expect a first sync measured in hours.
 
 ## Coding agents
 
-Five agents run here, and they run the same way: inside Emacs on the `eat`
+Six agents run here, and they run the same way: inside Emacs on the `eat`
 terminal, and inside a tmux session of their own, so a conversation survives a
 dropped ssh connection or an Emacs restart.
 
@@ -130,25 +130,26 @@ dropped ssh connection or an Emacs restart.
 | GitHub Copilot | `copilot` | `emacs-config.el` | `tmux -L copilot` |
 | opencode | `opencode` | `emacs-config.el` | `tmux -L opencode` |
 | kilo | `kilo` (also `kilocode`) | `emacs-config.el` | `tmux -L kilo` |
+| OpenAI Codex | `codex` | `emacs-config.el` | `tmux -L codex` |
 
-Four files make that work, and each one serves every agent: they work out which
+Five files make that work, and each one serves every agent: they work out which
 agent they are from the name they were called by, so they are installed once and
 linked under one name per agent.
 
 | file | goes to | what it does |
 | --- | --- | --- |
-| `ai-tmux` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo}-tmux` | starts (or re-attaches to) one tmux session per directory on that agent's private tmux server |
+| `ai-tmux` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo,codex}-tmux` | starts (or re-attaches to) one tmux session per directory on that agent's private tmux server |
 | `ai-tmux.conf` | `~/.config/ai-tmux.conf` | those servers' configuration: no prefix, no status line, no keys of their own |
-| `ai-wt` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo}-wt` | starts an agent on a fresh git worktree of the current repository |
-| `ai-pr` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo}-pr` | checks a pull request out into a worktree of its own and starts an agent in it |
-| `ai-issue` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo}-issue` | cuts a worktree for an issue, starts an agent in it and asks it to fix the issue through to a pull request |
+| `ai-wt` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo,codex}-wt` | starts an agent on a fresh git worktree of the current repository |
+| `ai-pr` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo,codex}-pr` | checks a pull request out into a worktree of its own and starts an agent in it |
+| `ai-issue` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo,codex}-issue` | cuts a worktree for an issue, starts an agent in it and asks it to fix the issue through to a pull request |
 
 `setup.sh` installs all five.  On a machine that already has them:
 
 ```sh
 cd ~/src/emacs-config
 install -m 755 ai-tmux ai-wt ai-pr ai-issue ~/.local/bin/
-for agent in claude antigravity agy copilot opencode kilo kilocode; do
+for agent in claude antigravity agy copilot opencode kilo kilocode codex; do
   ln -sfn ai-tmux ~/.local/bin/$agent-tmux
   ln -sfn ai-wt   ~/.local/bin/$agent-wt
   ln -sfn ai-pr   ~/.local/bin/$agent-pr
@@ -169,7 +170,8 @@ Emacs and its children, just above `;;; Coding agents in a terminal.`
 
 Each agent reads its own environment: `CLAUDE_TMUX_SESSION`, `CLAUDE_TMUX_THEME`,
 `CLAUDE_TMUX_PROGRAM`, `CLAUDE_TMUX_CONF`, and the same four under
-`ANTIGRAVITY_TMUX_`, `COPILOT_TMUX_`, `OPENCODE_TMUX_` and `KILO_TMUX_`.  Only
+`ANTIGRAVITY_TMUX_`, `COPILOT_TMUX_`, `OPENCODE_TMUX_`, `KILO_TMUX_` and
+`CODEX_TMUX_`.  Only
 claude takes the theme as a switch (`--settings`); the others read the terminal's
 own background colour, which eat answers for them.
 
@@ -183,7 +185,7 @@ tmux -L claude kill-session -t NAME
 
 and start the agent again -- or, from Emacs, `M-x claude-tmux-kill`,
 `M-x antigravity-tmux-kill`, `M-x copilot-cli-tmux-kill`,
-`M-x opencode-tmux-kill` and `M-x kilo-tmux-kill`.
+`M-x opencode-tmux-kill`, `M-x kilo-tmux-kill` and `M-x codex-tmux-kill`.
 
 ### One key: `<apps> k h`
 
@@ -208,10 +210,11 @@ and failing that a tmux session started here by an Emacs that has since gone --
 `claude-tmux` re-attaches rather than starting a second claude, so the way back
 after a restart is the same key.
 
-`agy-dwim`, `copilot-cli-dwim`, `opencode-dwim` and `kilo-dwim` are the same
-thing for the other four agents.  `claude-dwim` is on `<apps> k h` in
+`agy-dwim`, `copilot-cli-dwim`, `opencode-dwim`, `kilo-dwim` and `codex-dwim`
+are the same thing for the other five agents.  `claude-dwim` is on `<apps> k h` in
 `transient-apps`, `agy-dwim` on `<apps> k H`, `copilot-cli-dwim` on `<apps> k C`,
-`opencode-dwim` on `<apps> k O` and `kilo-dwim` on `<apps> k K`.
+`opencode-dwim` on `<apps> k O`, `kilo-dwim` on `<apps> k K` and `codex-dwim`
+on `<apps> k X`.
 
 ### The session list
 
@@ -235,29 +238,30 @@ two agents working in the same directory derive the same session name.
 
 ### Commands
 
-Claude keeps claude-code.el's own map on `C-c c`; the other four have no package
+Claude keeps claude-code.el's own map on `C-c c`; the other five have no package
 and so no map, and borrow `C-c a` -- Antigravity the plain letters, and each
 agent after it a prefix of its own (Copilot `C-c a o`, opencode `C-c a e`, kilo
-`C-c a l`) rather than another case of every letter, with Antigravity's letters
+`C-c a l`, Codex `C-c a x`) rather than another case of every letter, with Antigravity's letters
 repeated under it:
 
-| | Claude | Antigravity | Copilot | opencode | kilo |
-| --- | --- | --- | --- | --- | --- |
-| the right thing for where you are | `C-c a d`, `<apps> k h` | `C-c a D`, `<apps> k H` | `C-c a O`, `<apps> k C` | `C-c a E`, `<apps> k O` | `C-c a L`, `<apps> k K` |
-| the list of every session | `C-c a i` | `C-c a i` | `C-c a i` | `C-c a i` | `C-c a i` |
-| start, or return to this project's agent | `C-c a c` | `C-c a a` | `C-c a o o` | `C-c a e e` | `C-c a l l` |
-| switch between this Emacs's agent buffers | `C-c c b` | `C-c a b` | `C-c a o b` | `C-c a e b` | `C-c a l b` |
-| attach to a background tmux session | `M-x claude-tmux-switch` | `C-c a s` | `C-c a o s` | `C-c a e s` | `C-c a l s` |
-| end a background tmux session | `M-x claude-tmux-kill` | `C-c a k` | `C-c a o k` | `C-c a e k` | `C-c a l k` |
-| start on a fresh git worktree | `M-x claude-wt` | `C-c a w` | `C-c a o w` | `C-c a e w` | `C-c a l w` |
-| work on a pull request | `C-c a p` | `C-c a P` | `C-c a o p` | `C-c a e p` | `C-c a l p` |
-| fix an issue, through to a pull request | `C-c a n` | `C-c a N` | `C-c a o n` | `C-c a e n` | `C-c a l n` |
-| re-open a conversation the agent remembers | `C-c a r` | `C-c a R` | `C-c a o r` | `C-c a e r` | `C-c a l r` |
-| ...from another directory | `C-u C-u C-c c R` (asks which) | `C-u C-c a R` (lists all) | -- | `C-u C-c a e r` (this project) | `C-u C-c a l r` (lists all) |
+| | Claude | Antigravity | Copilot | opencode | kilo | Codex |
+| --- | --- | --- | --- | --- | --- | --- |
+| the right thing for where you are | `C-c a d`, `<apps> k h` | `C-c a D`, `<apps> k H` | `C-c a O`, `<apps> k C` | `C-c a E`, `<apps> k O` | `C-c a L`, `<apps> k K` | `C-c a X`, `<apps> k X` |
+| the list of every session | `C-c a i` | `C-c a i` | `C-c a i` | `C-c a i` | `C-c a i` | `C-c a i` |
+| start, or return to this project's agent | `C-c a c` | `C-c a a` | `C-c a o o` | `C-c a e e` | `C-c a l l` | `C-c a x x` |
+| switch between this Emacs's agent buffers | `C-c c b` | `C-c a b` | `C-c a o b` | `C-c a e b` | `C-c a l b` | `C-c a x b` |
+| attach to a background tmux session | `M-x claude-tmux-switch` | `C-c a s` | `C-c a o s` | `C-c a e s` | `C-c a l s` | `C-c a x s` |
+| end a background tmux session | `M-x claude-tmux-kill` | `C-c a k` | `C-c a o k` | `C-c a e k` | `C-c a l k` | `C-c a x k` |
+| start on a fresh git worktree | `M-x claude-wt` | `C-c a w` | `C-c a o w` | `C-c a e w` | `C-c a l w` | `C-c a x w` |
+| work on a pull request | `C-c a p` | `C-c a P` | `C-c a o p` | `C-c a e p` | `C-c a l p` | `C-c a x p` |
+| fix an issue, through to a pull request | `C-c a n` | `C-c a N` | `C-c a o n` | `C-c a e n` | `C-c a l n` | `C-c a x n` |
+| re-open a conversation the agent remembers | `C-c a r` | `C-c a R` | `C-c a o r` | `C-c a e r` | `C-c a l r` | `C-c a x r` |
+| ...from another directory | `C-u C-u C-c c R` (asks which) | `C-u C-c a R` (lists all) | -- | `C-u C-c a e r` (this project) | `C-u C-c a l r` (lists all) | `C-u C-c a x r` (lists all) |
 
 The prefixes are what was left rather than what one would choose: `o` went to
 Copilot first, so opencode took `e`, and `k` being Antigravity's kill and `i` the
-session list, kilo took `l`.  Each is the first letter of the agent's own name
+session list, kilo took `l`; and with `c`, `o`, `d` and `e` all gone, Codex took
+`x`.  Each is the first letter of the agent's own name
 still going spare.
 
 `ai-tmux-agents` is the list all of this walks: each entry pairs an agent's tmux
@@ -267,7 +271,7 @@ line there and a `--attach` function of its own.
 Everything that is not particular to one agent is shared in `emacs-config.el`:
 `ai-term--directory` (which directory a buffer belongs to), `ai-term--theme`,
 `ai-tmux--sessions` / `--read-session` / `--kill`, `ai-wt--worktree`, and --
-for the four agents with no package -- `ai-term--buffer-name` /
+for the five agents with no package -- `ai-term--buffer-name` /
 `--buffers-for-directory` / `--all-buffers` / `--read-buffer` / `--start`, which
 name a buffer after the directory an agent works in, find the ones already
 running, and `eat-make` another on that agent's `<agent>-tmux`; plus
@@ -276,8 +280,9 @@ conversations that the agents without one of their own share, and
 `ai-term--cli-conversations`, which reads a session list out of an
 opencode-shaped CLI for both of the agents that have one.  Each agent's commands
 are a few lines on top: `antigravity--start`, `copilot-cli--start`,
-`opencode--start` and `kilo--start` are one line apiece, and Copilot -- which has
-a resume picker of its own -- is the whole agent in about a hundred lines.
+`opencode--start`, `kilo--start` and `codex--start` are one line apiece, and
+Copilot and Codex -- which have resume pickers of their own -- are each the whole
+agent in about a hundred lines.
 
 Copilot's commands are spelled `copilot-cli-` rather than `copilot-`, because
 `copilot.el` (the inline completion) and `copilot-chat.el` are both loaded here
@@ -291,14 +296,16 @@ all say `copilot`.  opencode has no such neighbour, so its commands are plain
 Every command above finds a conversation through tmux: a session is still
 running, so there is something to re-attach to.  `C-c a r` (`claude-resume`),
 `C-c a R` (`antigravity-resume`, also `agy-resume`), `C-c a o r`
-(`copilot-cli-resume`), `C-c a e r` (`opencode-resume`) and `C-c a l r`
-(`kilo-resume`) are the way back in when there is not -- after a reboot, or a
-`C-c a k` -- since all five agents keep their own history of what was said, quite
+(`copilot-cli-resume`), `C-c a e r` (`opencode-resume`), `C-c a l r`
+(`kilo-resume`) and `C-c a x r` (`codex-resume`) are the way back in when there
+is not -- after a reboot, or a `C-c a k` -- since all six agents keep their own history of what was said, quite
 apart from the sessions they were said in.
 
-Claude and Copilot have pickers of their own: `claude --resume` and
-`copilot --resume` list the conversations they remember and re-open the one you
-choose, so those two commands are a switch and nothing else.
+Claude, Copilot and Codex have pickers of their own: `claude --resume`,
+`copilot --resume` and `codex resume` list the conversations they remember and
+re-open the one you choose, so those three commands are a switch and nothing
+else.  `codex resume` lists this directory's by default, and `C-u C-c a x r`
+asks it for `--all`.
 
 The other three have to be given the picker, and for opposite reasons.
 
@@ -370,7 +377,7 @@ the session list, which knows every session by name.
 ### Pull requests
 
 `C-c a p` (`claude-pr`), `C-c a P` (`agy-pr`), `C-c a o p` (`copilot-cli-pr`),
-`C-c a e p` (`opencode-pr`) and `C-c a l p` (`kilo-pr`) put a pull request in a
+`C-c a e p` (`opencode-pr`), `C-c a l p` (`kilo-pr`) and `C-c a x p` (`codex-pr`) put a pull request in a
 worktree of its own and set the agent loose in it.  `gh` does the checkout, so a pull
 request from a fork works and the branch is set up to push back to the right
 place; the agent can read, build, commit and push it while the checkout you are
@@ -386,8 +393,8 @@ re-enters it, which re-attaches to the conversation already living there.
 ### Issues
 
 `C-c a n` (`claude-issue`), `C-c a N` (`agy-issue`), `C-c a o n`
-(`copilot-cli-issue`), `C-c a e n` (`opencode-issue`) and `C-c a l n`
-(`kilo-issue`) are the other half: rather than pick up a branch someone has
+(`copilot-cli-issue`), `C-c a e n` (`opencode-issue`), `C-c a l n`
+(`kilo-issue`) and `C-c a x n` (`codex-issue`) are the other half: rather than pick up a branch someone has
 pushed, they cut one for an issue and hand the agent the whole job.  Asking
 completes over the repository's open issues the way the pull request commands
 complete over pull requests, and takes a number, a `#number` or a URL.
@@ -402,8 +409,8 @@ code-review skill -- go over it until it comes back clean, and open the pull
 request.  `C-u` first lets you edit what it is asked.  Asking again for an issue
 whose agent is still running re-attaches to it without asking a second time.
 
-On the shell, `claude-issue`, `agy-issue`, `copilot-issue`, `opencode-issue` and
-`kilo-issue` do the same.  With no terminal to type into, a watcher left in the
+On the shell, `claude-issue`, `agy-issue`, `copilot-issue`, `opencode-issue`,
+`kilo-issue` and `codex-issue` do the same.  With no terminal to type into, a watcher left in the
 background polls the agent's tmux pane instead, and types the request in with
 `tmux send-keys` once it has gone still.  `AI_REVIEWER`, `AI_ISSUE_PROMPT`,
 `AI_ISSUE_QUIET` and `AI_ISSUE_TIMEOUT` stand in for the Emacs variables.
