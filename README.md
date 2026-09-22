@@ -141,16 +141,18 @@ linked under one name per agent.
 | `ai-tmux.conf` | `~/.config/ai-tmux.conf` | those servers' configuration: no prefix, no status line, no keys of their own |
 | `ai-wt` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo}-wt` | starts an agent on a fresh git worktree of the current repository |
 | `ai-pr` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo}-pr` | checks a pull request out into a worktree of its own and starts an agent in it |
+| `ai-issue` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo}-issue` | cuts a worktree for an issue, starts an agent in it and asks it to fix the issue through to a pull request |
 
-`setup.sh` installs all four.  On a machine that already has them:
+`setup.sh` installs all five.  On a machine that already has them:
 
 ```sh
 cd ~/src/emacs-config
-install -m 755 ai-tmux ai-wt ai-pr ~/.local/bin/
+install -m 755 ai-tmux ai-wt ai-pr ai-issue ~/.local/bin/
 for agent in claude antigravity agy copilot opencode kilo kilocode; do
   ln -sfn ai-tmux ~/.local/bin/$agent-tmux
   ln -sfn ai-wt   ~/.local/bin/$agent-wt
   ln -sfn ai-pr   ~/.local/bin/$agent-pr
+  ln -sfn ai-issue ~/.local/bin/$agent-issue
 done
 install -m 644 ai-tmux.conf ~/.config/ai-tmux.conf
 install -m 755 emacsreset ~/.local/bin/
@@ -399,6 +401,12 @@ then have an independent reviewer -- `ai-reviewer`, `agy` by default, through it
 code-review skill -- go over it until it comes back clean, and open the pull
 request.  `C-u` first lets you edit what it is asked.  Asking again for an issue
 whose agent is still running re-attaches to it without asking a second time.
+
+On the shell, `claude-issue`, `agy-issue`, `copilot-issue`, `opencode-issue` and
+`kilo-issue` do the same.  With no terminal to type into, a watcher left in the
+background polls the agent's tmux pane instead, and types the request in with
+`tmux send-keys` once it has gone still.  `AI_REVIEWER`, `AI_ISSUE_PROMPT`,
+`AI_ISSUE_QUIET` and `AI_ISSUE_TIMEOUT` stand in for the Emacs variables.
 
 `agy` works as a name for antigravity throughout, since that is what the CLI is
 called.  On the shell `agy-pr`, `agy-wt` and `agy-tmux` are the same scripts as

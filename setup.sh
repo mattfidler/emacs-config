@@ -280,12 +280,13 @@ cp ccache "${HOME}/.ccache/ccache.conf"
 
 mkdir -p "${HOME}/.local/bin"
 
-install -m 755 ai-tmux ai-wt ai-pr "${HOME}/.local/bin/"
+install -m 755 ai-tmux ai-wt ai-pr ai-issue "${HOME}/.local/bin/"
 
 for agent in claude antigravity agy copilot opencode kilo kilocode; do
     ln -sfn ai-tmux "${HOME}/.local/bin/${agent}-tmux"
     ln -sfn ai-wt   "${HOME}/.local/bin/${agent}-wt"
     ln -sfn ai-pr   "${HOME}/.local/bin/${agent}-pr"
+    ln -sfn ai-issue "${HOME}/.local/bin/${agent}-issue"
 done
 
 mkdir -p "${HOME}/.config"

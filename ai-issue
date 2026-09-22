@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# ai-issue -- cut a worktree for an issue, and set an agent loose on fixing it.
+#
+# `claude-issue 1290' puts a branch issue-1290 of the current repository in
+# ~/src/<repo>-issue1290, cut from a freshly fetched origin trunk, runs claude
+# there, and once claude is waiting for input asks it to fix the issue: commit
+# and push often, keep the branch merged with the trunk, get a clean review from
+# an independent reviewer, and open the pull request.  `agy-issue',
+# `copilot-issue', `opencode-issue' and `kilo-issue' do the same with
+# antigravity, Copilot, opencode and kilo.  Like ai-tmux, ai-wt and ai-pr, one
+# copy serves every agent and works out which one it is from the name it was
+# called by.  This is the shell's `claude-issue' and friends in emacs-config.el.
+#
+# There is no telling from outside when a terminal program is ready for input,
+# so "waiting" means the agent's tmux pane has drawn something and then stayed
+# the same for AI_ISSUE_QUIET seconds.  A watcher left running in the background
+# types the request in then, and gives up after AI_ISSUE_TIMEOUT seconds of an
+# agent that never settles.
+#
+# Running it again for the same issue re-enters the worktree and re-attaches to
+# the agent already working there, without asking it a second time.  Agent args
+# only reach an agent that is starting, so they are ignored then.
+#
+# With no argument it lists the open issues and asks which.
+#
+# Usage: claude-issue [ISSUE] [agent args...]
+#        agy-issue [ISSUE] [agent args...]
+#        copilot-issue [ISSUE] [agent args...]
+#        opencode-issue [ISSUE] [agent args...]
+#        kilo-issue [ISSUE] [agent args...]
+#
+# Environment:
+#   AI_REVIEWER       the independent reviewer to prefer (default: agy)
+#   AI_ISSUE_PROMPT   what to ask instead; %i is the issue, %r the reviewer and
+#                     %t the trunk branch
+#   AI_ISSUE_QUIET    seconds of stillness that mean the agent is waiting (3)
+#   AI_ISSUE_TIMEOUT  seconds to wait for that before giving up (120)
+
+set -uo pipefail
+
+tool=$(basename -- "$0")
+tool=${tool%-issue}
+case $tool in
+    ''|ai)    tool=${AI_TMUX_TOOL:-claude} ;;
+    agy)      tool=antigravity ;;
+    kilocode) tool=kilo ;;
+esac
+
+die() { printf '%s-issue: %s\n' "$tool" "$*" >&2; exit 1; }
+
+git rev-parse --show-toplevel >/dev/null 2>&1 ||
+    die "not inside a git repository"
+
+# The main worktree rather than whichever one we are standing in, so issue
+# worktrees stay flat siblings of the repository instead of nesting.
+root=$(dirname -- "$(git rev-parse --path-format=absolute --git-common-dir)")
+
+issue=${1-}
+if [ $# -gt 0 ]; then
+    shift
+else
+    command -v gh >/dev/null 2>&1 ||
+        die "gh is not installed; give the issue number instead"
+    printf 'Open issues:\n' >&2
+    gh issue list --limit 30 >&2 2>/dev/null || true
+    # Prefer /dev/tty over stdin: this may be started from a pipe.
+    [ -t 0 ] || { exec </dev/tty; } 2>/dev/null
+    read -r -p "Issue: " issue || die "no issue given"
+fi
+
+# Take a number, a #number, or the URL of one -- a comment's included.
+issue=${issue%%#issuecomment*}
+issue=${issue%/}
+issue=${issue##*/}
+issue=${issue#\#}
+case $issue in
+    ''|*[!0-9]*) die "not an issue number: ${issue:-(none)}" ;;
+esac
+
+# Whatever origin's HEAD points at, and failing that whichever of main and
+# master origin has -- or, before anything has been fetched, the repository.
+trunk=$(git -C "$root" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+trunk=${trunk#origin/}
+if [ -z "$trunk" ]; then
+    for branch in main master; do
+        if git -C "$root" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+            trunk=$branch
+            break
+        fi
+    done
+fi
+if [ -z "$trunk" ]; then
+    for branch in main master; do
+        if git -C "$root" show-ref --verify --quiet "refs/heads/$branch"; then
+            trunk=$branch
+            break
+        fi
+    done
+fi
+[ -n "$trunk" ] || die "cannot tell what the trunk of $root is"
+
+branch=issue-$issue
+worktree="$(dirname -- "$root")/$(basename -- "$root")-issue$issue"
+
+if [ -e "$worktree" ]; then
+    [ -d "$worktree" ] || die "$worktree exists and is not a directory"
+    printf 'Re-using existing worktree %s\n' "$worktree"
+elif git -C "$root" show-ref --verify --quiet "refs/heads/$branch"; then
+    git -C "$root" worktree add -- "$worktree" "$branch" || exit
+else
+    # Cut from the trunk as origin has it now, not from HEAD: the fix is going
+    # to be merged back there.
+    git -C "$root" fetch origin "$trunk" || die "could not fetch origin/$trunk"
+    git -C "$root" worktree add --no-track -b "$branch" -- "$worktree" \
+        "origin/$trunk" || exit
+fi
+
+cd "$worktree" || die "cannot enter $worktree"
+
+# <agent>-tmux keeps the conversation alive across Emacs restarts and dropped
+# ssh connections; fall back to the bare agent, with no one to ask it anything,
+# when it is not installed.
+program=$tool-tmux
+if ! command -v "$program" >/dev/null 2>&1; then
+    case $tool in
+        antigravity) program=agy ;;
+        *)           program=$tool ;;
+    esac
+    printf '%s-issue: %s not found; ask the agent to fix #%s yourself\n' \
+           "$tool" "$tool-tmux" "$issue" >&2
+    exec "$program" "$@"
+fi
+
+# The session name ai-tmux would derive for this directory, given to it
+# explicitly so the watcher below knows which pane to type into -- and so a
+# second run finds the agent already here rather than starting another.
+leaf=$(basename -- "$PWD" | tr -c 'A-Za-z0-9_-' '-')
+hash=$(printf '%s' "$PWD" | cksum | cut -d' ' -f1)
+session="${leaf:-root}-${hash}"
+session=${session//./-}
+session=${session//:/-}
+socket=$tool
+prefix=$(printf '%s' "$tool" | tr '[:lower:]-' '[:upper:]_')
+export "${prefix}_TMUX_SESSION=$session"
+
+if tmux -L "$socket" has-session -t "=$session" 2>/dev/null; then
+    printf '%s is already working in %s; nothing sent\n' "$tool" "$worktree" >&2
+    [ $# -eq 0 ] || printf '%s-issue: agent args ignored\n' "$tool" >&2
+    exec "$program"
+fi
+
+prompt=${AI_ISSUE_PROMPT:-"Can you fix issue #%i, committing and pushing often, for each commit if origin/%t has moved, merge the commit with origin/%t so it will be ready to review once the fix is complete.  Once the fix is complete, review with an independent reviewer (preferring %r with skill) until no issues remain.  Once the review is clean open a pull request to fix the issue"}
+# Quoted, or bash 5.2 reads an & in the replacement as the text it replaces.
+prompt=${prompt//%i/"$issue"}
+prompt=${prompt//%r/"${AI_REVIEWER:-agy}"}
+prompt=${prompt//%t/"$trunk"}
+
+quiet=${AI_ISSUE_QUIET:-3}
+timeout=${AI_ISSUE_TIMEOUT:-120}
+case $quiet$timeout in
+    *[!0-9]*) die "AI_ISSUE_QUIET and AI_ISSUE_TIMEOUT are whole seconds" ;;
+esac
+
+# Wait, in the background, for the pane to draw something and go still, then
+# type the request in -- and the return that submits it a moment later, so an
+# agent that reads a burst of input as a paste does not take the return for a
+# newline in it.  Deaf to SIGHUP, so closing the terminal this was started
+# from does not take the watcher with it.
+(
+    trap '' HUP
+    target="=$session:"
+    last= still=0 waited=0
+    while [ "$waited" -lt $((timeout * 2)) ]; do
+        sleep 0.5
+        waited=$((waited + 1))
+        screen=$(tmux -L "$socket" capture-pane -p -t "$target" 2>/dev/null) ||
+            continue
+        if [ -z "${screen//[[:space:]]/}" ] || [ "$screen" != "$last" ]; then
+            last=$screen still=0
+            continue
+        fi
+        still=$((still + 1))
+        if [ "$still" -ge $((quiet * 2)) ]; then
+            tmux -L "$socket" send-keys -t "$target" -l -- "$prompt"
+            sleep 0.5
+            tmux -L "$socket" send-keys -t "$target" Enter
+            exit 0
+        fi
+    done
+    tmux -L "$socket" display-message -t "$target" \
+         "$tool never settled; ask it to fix #$issue yourself" 2>/dev/null
+) </dev/null >/dev/null 2>&1 &
+disown
+
+exec "$program" "$@"
