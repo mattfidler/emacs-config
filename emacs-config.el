@@ -2422,7 +2422,9 @@ antigravity-code-review skill, \"copilot\" or \"kilo\" for theirs."
           "so it will be ready to review once the fix is complete.  Once the "
           "fix is complete, review with an independent reviewer (preferring "
           "%r with skill) until no issues remain.  Once the review is clean "
-          "open a pull request to fix the issue")
+          "formatted with air, and changes are linted, open a pull request to "
+          "fix the issue. Monitor every hour and fix any CI/CD issues as well as "
+          "merging origin/%t as needed to keep this ready for human review and integration")
   "What an agent started on an issue is asked to do.
 
 %i is replaced by the issue number, %r by `ai-reviewer' and %t by the
