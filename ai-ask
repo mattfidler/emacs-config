@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# ai-ask -- the half of ai-pr and ai-issue that hands the agent a job.
+#
+# Not run on its own: it is sourced by ai-pr and ai-issue, which are the same
+# shape once the checkout is done -- work out which tmux session the agent will
+# be in, drop from the list whatever already has a worktree of its own, and,
+# for an agent that is starting rather than one already at work, type the
+# request in once it is waiting for it.
+#
+# There is no telling from outside when a terminal program is ready for input,
+# so "waiting" means the agent's tmux pane has drawn something and then stayed
+# the same for AI_SEND_QUIET seconds.  The waiting is done in the background,
+# since the caller ends by exec'ing the agent itself.
+#
+# Environment:
+#   AI_REVIEWER     the independent reviewer to prefer (default: agy)
+#   AI_SEND_QUIET   seconds of stillness that mean the agent is waiting (3)
+#   AI_SEND_TIMEOUT seconds to wait for that before giving up (120)
+
+# The session name ai-tmux derives for a directory, which the caller gives it
+# back as <AGENT>_TMUX_SESSION so that the watcher knows which pane to type
+# into -- and so a second run finds the agent already there.
+ai_ask_session() {
+    local dir=${1:-$PWD} leaf hash session
+    leaf=$(basename -- "$dir" | tr -c 'A-Za-z0-9_-' '-')
+    hash=$(printf '%s' "$dir" | cksum | cut -d' ' -f1)
+    session="${leaf:-root}-${hash}"
+    session=${session//./-}
+    session=${session//:/-}
+    printf '%s' "$session"
+}
+
+# Whatever origin's HEAD points at, and failing that whichever of main and
+# master origin has -- or, before anything has been fetched, the repository.
+# Prints nothing when it cannot tell.
+ai_ask_trunk() {
+    local root=$1 trunk branch
+    trunk=$(git -C "$root" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+    trunk=${trunk#origin/}
+    if [ -z "$trunk" ]; then
+        for branch in main master; do
+            if git -C "$root" show-ref --verify --quiet "refs/remotes/origin/$branch"
+            then trunk=$branch; break; fi
+        done
+    fi
+    if [ -z "$trunk" ]; then
+        for branch in main master; do
+            if git -C "$root" show-ref --verify --quiet "refs/heads/$branch"
+            then trunk=$branch; break; fi
+        done
+    fi
+    printf '%s' "$trunk"
+}
+
+# Read TSV lines of "number<TAB>anything" on stdin and print back only those
+# whose worktree is not there yet: what there is still work to start on.  ROOT
+# is the main worktree, KIND is pr or issue.
+ai_ask_unstarted() {
+    local root=$1 kind=$2 line number worktree
+    while IFS= read -r line; do
+        number=${line%%$'\t'*}
+        worktree="$(dirname -- "$root")/$(basename -- "$root")-$kind$number"
+        [ -d "$worktree" ] || printf '%s\n' "$line"
+    done
+}
+
+# Wait for the agent in SESSION on SOCKET to settle, then type PROMPT in --
+# and the return that submits it a moment later, so an agent that reads a burst
+# of input as a paste does not take the return for a newline in it.  Detached
+# from this terminal, and deaf to SIGHUP, so closing it does not take the
+# watcher with it.  WHAT names the job in the message left behind when the
+# agent never settles at all.
+ai_ask_when_ready() {
+    local socket=$1 session=$2 prompt=$3 what=$4
+    local quiet=${AI_SEND_QUIET:-3} timeout=${AI_SEND_TIMEOUT:-120}
+    case $quiet$timeout in
+        ''|*[!0-9]*)
+            printf 'ai-ask: AI_SEND_QUIET and AI_SEND_TIMEOUT are whole seconds\n' >&2
+            return 1
+            ;;
+    esac
+    (
+        trap '' HUP
+        target="=$session:"
+        last= still=0 waited=0
+        while [ "$waited" -lt $((timeout * 2)) ]; do
+            sleep 0.5
+            waited=$((waited + 1))
+            screen=$(tmux -L "$socket" capture-pane -p -t "$target" 2>/dev/null) ||
+                continue
+            if [ -z "${screen//[[:space:]]/}" ] || [ "$screen" != "$last" ]; then
+                last=$screen still=0
+                continue
+            fi
+            still=$((still + 1))
+            if [ "$still" -ge $((quiet * 2)) ]; then
+                tmux -L "$socket" send-keys -t "$target" -l -- "$prompt"
+                sleep 0.5
+                tmux -L "$socket" send-keys -t "$target" Enter
+                exit 0
+            fi
+        done
+        tmux -L "$socket" display-message -t "$target" \
+             "$socket never settled; ask it about $what yourself" 2>/dev/null
+    ) </dev/null >/dev/null 2>&1 &
+    disown
+}

@@ -9,14 +9,25 @@
 # antigravity, Copilot, opencode, kilo and Codex.  Like ai-tmux and ai-wt, one copy serves every agent and
 # works out which one it is from the name it was called by.
 #
+# Once the agent is waiting for input it is asked to do the reviewing: read the
+# pull request, fix what it finds, format the R it touches with air, and push
+# the branch back.  AI_PR_PROMPT is that request, %p the pull request and %t
+# the trunk.
+#
 # The worktree is a flat sibling of the repository even when this is run from
 # inside another worktree, and running it again for the same pull request
 # re-enters it -- which, since the agents run under tmux, re-attaches to the
-# conversation already living there.  Unless agent args are given: ai-tmux
-# starts a session of its own for those rather than let the running one
-# swallow them.
+# conversation already living there, and leaves it to get on with it rather
+# than asking it anything a second time.  A worktree whose session has since
+# ended starts an agent, and asks it again.
 #
-# With no argument it lists the open pull requests and asks which.
+# With no argument it lists the open pull requests that have no worktree yet --
+# the ones there is still work to start on -- and asks which.
+#
+# Environment:
+#   AI_PR_PROMPT    what to ask instead; %p is the pull request, %t the trunk
+#   AI_SEND_QUIET   seconds of stillness that mean the agent is waiting (3)
+#   AI_SEND_TIMEOUT seconds to wait for that before giving up (120)
 #
 # Usage: claude-pr [PR] [agent args...]
 #        agy-pr [PR] [agent args...]
@@ -37,6 +48,12 @@ esac
 
 die() { printf '%s-pr: %s\n' "$tool" "$*" >&2; exit 1; }
 
+# The half of this shared with ai-issue: the session name, the list of what has
+# not been started yet, and typing the request in once the agent is waiting.
+ask=$(command -v ai-ask) || die "ai-ask is not installed beside this script"
+# shellcheck source=ai-ask
+. "$ask"
+
 command -v gh >/dev/null 2>&1 ||
     die "gh is not installed; it is what knows how to fetch a pull request"
 
@@ -52,7 +69,10 @@ if [ $# -gt 0 ]; then
     shift
 else
     printf 'Open pull requests:\n' >&2
-    gh pr list --limit 30 >&2 2>/dev/null || true
+    # Less the ones already in a worktree: an agent is living in those.
+    gh pr list --limit 50 --json number,title,author \
+       --jq '.[] | "\(.number)\t\(.title)\t\(.author.login)"' 2>/dev/null |
+        ai_ask_unstarted "$root" pr >&2 || true
     # Prefer /dev/tty over stdin: this may be started from a pipe.
     [ -t 0 ] || { exec </dev/tty; } 2>/dev/null
     read -r -p "Pull request: " pr || die "no pull request given"
@@ -83,14 +103,41 @@ fi
 
 cd "$worktree" || die "cannot enter $worktree"
 
+trunk=$(ai_ask_trunk "$root")
+trunk=${trunk:-main}
+
 # <agent>-tmux keeps the conversation alive across Emacs restarts and dropped
-# ssh connections; fall back to the bare agent when it is not installed.
+# ssh connections; fall back to the bare agent, with no one to ask it anything,
+# when it is not installed.
 program=$tool-tmux
 if ! command -v "$program" >/dev/null 2>&1; then
     case $tool in
         antigravity) program=agy ;;
         *)           program=$tool ;;
     esac
+    printf '%s-pr: %s not found; ask the agent to review #%s yourself\n' \
+           "$tool" "$tool-tmux" "$pr" >&2
+    exec "$program" "$@"
 fi
+
+# Given to ai-tmux explicitly so the watcher knows which pane to type into --
+# and so a second run finds the agent already here rather than starting another.
+session=$(ai_ask_session)
+socket=$tool
+prefix=$(printf '%s' "$tool" | tr '[:lower:]-' '[:upper:]_')
+export "${prefix}_TMUX_SESSION=$session"
+
+if tmux -L "$socket" has-session -t "=$session" 2>/dev/null; then
+    printf '%s is already working in %s; nothing sent\n' "$tool" "$worktree" >&2
+    [ $# -eq 0 ] || printf '%s-pr: agent args ignored\n' "$tool" >&2
+    exec "$program"
+fi
+
+prompt=${AI_PR_PROMPT:-"Can you review pull request #%p, and fix what you find, committing and pushing to its branch often; run \`air format .' over the R you touch before each commit, and if origin/%t has moved merge it in so the branch stays ready to review.  Once nothing is left to fix, say on the pull request what you changed"}
+# Quoted, or bash 5.2 reads an & in the replacement as the text it replaces.
+prompt=${prompt//%p/"$pr"}
+prompt=${prompt//%t/"$trunk"}
+
+ai_ask_when_ready "$socket" "$session" "$prompt" "pull request #$pr" || exit
 
 exec "$program" "$@"

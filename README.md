@@ -132,9 +132,10 @@ dropped ssh connection or an Emacs restart.
 | kilo | `kilo` (also `kilocode`) | `emacs-config.el` | `tmux -L kilo` |
 | OpenAI Codex | `codex` | `emacs-config.el` | `tmux -L codex` |
 
-Five files make that work, and each one serves every agent: they work out which
-agent they are from the name they were called by, so they are installed once and
-linked under one name per agent.
+Six files make that work.  The five that start an agent each serve all of them:
+they work out which agent they are from the name they were called by, so they
+are installed once and linked under one name per agent.  The sixth, `ai-ask`, is
+sourced by two of the others and has no names of its own.
 
 | file | goes to | what it does |
 | --- | --- | --- |
@@ -143,12 +144,13 @@ linked under one name per agent.
 | `ai-wt` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo,codex}-wt` | starts an agent on a fresh git worktree of the current repository |
 | `ai-pr` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo,codex}-pr` | checks a pull request out into a worktree of its own and starts an agent in it |
 | `ai-issue` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo,codex}-issue` | cuts a worktree for an issue, starts an agent in it and asks it to fix the issue through to a pull request |
+| `ai-ask` | `~/.local/bin/ai-ask` | sourced by `ai-pr` and `ai-issue`: the session name, the not-yet-started list, and typing the request in once the agent is waiting |
 
-`setup.sh` installs all five.  On a machine that already has them:
+`setup.sh` installs all six.  On a machine that already has them:
 
 ```sh
 cd ~/src/emacs-config
-install -m 755 ai-tmux ai-wt ai-pr ai-issue ~/.local/bin/
+install -m 755 ai-tmux ai-wt ai-pr ai-issue ai-ask ~/.local/bin/
 for agent in claude antigravity agy copilot opencode kilo kilocode codex; do
   ln -sfn ai-tmux ~/.local/bin/$agent-tmux
   ln -sfn ai-wt   ~/.local/bin/$agent-wt
@@ -387,8 +389,15 @@ Asking with no argument completes over the repository's open pull requests,
 newest first, annotated with the title and who opened it; a number, a `#number`
 or the URL of one all work, so a closed pull request can still be typed in.  The
 worktree is `~/src/<repo>-pr<N>` -- a flat sibling of the repository even when
-asked for from inside another worktree -- and asking again for the same one
-re-enters it, which re-attaches to the conversation already living there.
+asked for from inside another worktree.  Pull requests that already have one are
+left out of the list, since an agent is living in those: typing the number in
+anyway re-enters it, which re-attaches to the conversation already there.
+
+Once the agent is waiting for input it is asked for `ai-pr-prompt`: review the
+pull request, fix what it finds, run `air format .` over the R it touches before
+each commit, merge the trunk in whenever it moves, and say on the pull request
+what it changed.  `C-u` first lets you edit what it is asked, and an agent
+already at work in that worktree is left alone rather than asked again.
 
 ### Issues
 
@@ -397,12 +406,13 @@ re-enters it, which re-attaches to the conversation already living there.
 (`kilo-issue`) and `C-c a x n` (`codex-issue`) are the other half: rather than pick up a branch someone has
 pushed, they cut one for an issue and hand the agent the whole job.  Asking
 completes over the repository's open issues the way the pull request commands
-complete over pull requests, and takes a number, a `#number` or a URL.
+complete over pull requests, and takes a number, a `#number` or a URL.  Issues
+that already have a worktree are left out, the same way.
 
 The worktree is `~/src/<repo>-issue<N>` on a branch `issue-<N>`, cut from a
 freshly fetched `origin/main` (or whatever origin's trunk is) rather than from
 HEAD.  Once the agent's terminal has drawn its prompt and gone quiet for
-`ai-issue-quiet-seconds`, it is asked for `ai-issue-prompt`: fix the issue,
+`ai-send-quiet-seconds`, it is asked for `ai-issue-prompt`: fix the issue,
 committing and pushing often and merging `origin/main` in whenever it has moved,
 then have an independent reviewer -- `ai-reviewer`, `agy` by default, through its
 code-review skill -- go over it until it comes back clean, and open the pull
@@ -413,7 +423,8 @@ On the shell, `claude-issue`, `agy-issue`, `copilot-issue`, `opencode-issue`,
 `kilo-issue` and `codex-issue` do the same.  With no terminal to type into, a watcher left in the
 background polls the agent's tmux pane instead, and types the request in with
 `tmux send-keys` once it has gone still.  `AI_REVIEWER`, `AI_ISSUE_PROMPT`,
-`AI_ISSUE_QUIET` and `AI_ISSUE_TIMEOUT` stand in for the Emacs variables.
+`AI_SEND_QUIET` and `AI_SEND_TIMEOUT` stand in for the Emacs variables.  The
+pull request commands work the same way, with `AI_PR_PROMPT`.
 
 `agy` works as a name for antigravity throughout, since that is what the CLI is
 called.  On the shell `agy-pr`, `agy-wt` and `agy-tmux` are the same scripts as
