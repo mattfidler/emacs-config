@@ -52,15 +52,43 @@ ai_ask_trunk() {
     printf '%s' "$trunk"
 }
 
+# The worktree already made for KIND (pr or issue) NUMBER of the repository whose
+# main worktree is ROOT, or nothing.  That is <repo>-<kind><N>, the name every
+# one had before pull requests carried their branch, or <repo>-<anything>-<kind><N>
+# among ROOT's own worktrees -- so a directory of some other repository that
+# happens to share the prefix is never mistaken for it.  WORKTREES, the output
+# of `git worktree list --porcelain', saves looking it up again for each one.
+ai_ask_existing() {
+    local root=$1 kind=$2 number=$3 worktrees=${4-} parent repo line dir
+    parent=$(dirname -- "$root") repo=$(basename -- "$root")
+    if [ -d "$parent/$repo-$kind$number" ]; then
+        printf '%s' "$parent/$repo-$kind$number"
+        return 0
+    fi
+    [ -n "$worktrees" ] || worktrees=$(git -C "$root" worktree list --porcelain)
+    while IFS= read -r line; do
+        dir=${line#worktree }
+        [ "$dir" != "$line" ] || continue
+        # shellcheck disable=SC2053
+        # A worktree whose directory was deleted by hand is still listed, until
+        # it is pruned; it is not one to re-enter.
+        if [[ $dir == "$parent/$repo-"?*"-$kind$number" ]] && [ -d "$dir" ]; then
+            printf '%s' "$dir"
+            return 0
+        fi
+    done <<<"$worktrees"
+    return 1
+}
+
 # Read TSV lines of "number<TAB>anything" on stdin and print back only those
 # whose worktree is not there yet: what there is still work to start on.  ROOT
 # is the main worktree, KIND is pr or issue.
 ai_ask_unstarted() {
-    local root=$1 kind=$2 line number worktree
+    local root=$1 kind=$2 line worktrees
+    worktrees=$(git -C "$root" worktree list --porcelain)
     while IFS= read -r line; do
-        number=${line%%$'\t'*}
-        worktree="$(dirname -- "$root")/$(basename -- "$root")-$kind$number"
-        [ -d "$worktree" ] || printf '%s\n' "$line"
+        ai_ask_existing "$root" "$kind" "${line%%$'\t'*}" "$worktrees" \
+            >/dev/null || printf '%s\n' "$line"
     done
 }
 

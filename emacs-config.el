@@ -2352,17 +2352,56 @@ completion category, for whatever annotates or acts on candidates."
               (complete-with-action action items string pred)))))
     (string-trim (completing-read prompt table nil nil))))
 
-(defun ai-gh--worktree-name (kind number &optional root)
+(defun ai-gh--worktree-name (kind number &optional root label)
   "Where the worktree for KIND (\"pr\" or \"issue\") NUMBER goes.
 
-~/src/<repo>-pr<N> and ~/src/<repo>-issue<N>: flat siblings of the
-repository, whichever worktree of it this is asked for from.  ROOT is
+~/src/<repo>-issue<N>, or ~/src/<repo>-<LABEL>-pr<N> when LABEL is
+given -- a pull request's branch, so the directory says what is in it:
+flat siblings of the repository, whichever worktree of it this is asked
+for from.  LABEL is cut down to what is safe in a file name.  ROOT is
 that repository, `ai-pr--root' by default -- worth passing when asking
 about a list of them, since working it out runs git."
-  (let ((root (directory-file-name (or root (ai-pr--root)))))
-    (expand-file-name (format "%s-%s%s" (file-name-nondirectory root)
+  (let ((root (directory-file-name (or root (ai-pr--root))))
+        (label (and label
+                    (string-trim
+                     (replace-regexp-in-string "[^A-Za-z0-9_.]+" "-" label)
+                     "[-.]+" "[-.]+"))))
+    (expand-file-name (format "%s-%s%s%s" (file-name-nondirectory root)
+                              (if (or (null label) (string-empty-p label)) ""
+                                (concat label "-"))
                               kind number)
                       (file-name-directory root))))
+
+(defun ai-gh--worktrees (root)
+  "The directories of every worktree of the repository ROOT."
+  (let ((default-directory (file-name-as-directory root)))
+    (delq nil
+          (mapcar (lambda (line)
+                    (and (string-prefix-p "worktree " line)
+                         (directory-file-name (substring line 9))))
+                  (process-lines "git" "worktree" "list" "--porcelain")))))
+
+(defun ai-gh--existing (kind number &optional root worktrees)
+  "The worktree already made for KIND NUMBER, or nil.
+
+That is ~/src/<repo>-<KIND><N>, the name every one had before pull
+requests carried their branch, or ~/src/<repo>-<anything>-<KIND><N>
+when it is one of WORKTREES -- the worktrees of ROOT, looked up when not
+given -- so that a directory of some other repository that happens to
+share the prefix is never mistaken for it."
+  (let* ((root (directory-file-name (or root (ai-pr--root))))
+         (plain (ai-gh--worktree-name kind number root))
+         (repo (regexp-quote (file-name-nondirectory root)))
+         (match (format "\\`%s-.+-%s%s\\'" repo kind number)))
+    (if (file-directory-p plain)
+        plain
+      (seq-find (lambda (dir)
+                  (and (string-match-p match (file-name-nondirectory dir))
+                       (equal (file-name-directory dir)
+                              (file-name-directory plain))
+                       ;; Deleted by hand but not yet pruned: still listed.
+                       (file-directory-p dir)))
+                (or worktrees (ai-gh--worktrees root))))))
 
 (defun ai-gh--unstarted (items kind)
   "ITEMS, less the ones that already have a KIND worktree of their own.
@@ -2371,11 +2410,12 @@ What is offered is what there is still work to start on: an agent is
 already living in the others, and `ai-tmux-list' or a dwim is the way
 back to it.  Typing the number in anyway still re-enters that worktree,
 since `ai-gh--read' takes what it is given."
-  ;; One git for the root, rather than one per candidate.
-  (let ((root (ai-pr--root)))
+  ;; One git for the root and one for its worktrees, rather than one per
+  ;; candidate.
+  (let* ((root (ai-pr--root))
+         (worktrees (ai-gh--worktrees root)))
     (seq-remove (lambda (item)
-                  (file-directory-p
-                   (ai-gh--worktree-name kind (car item) root)))
+                  (ai-gh--existing kind (car item) root worktrees))
                 items)))
 
 (defun ai-gh--number (what thing)
@@ -2394,29 +2434,37 @@ WHAT names it in the error when THING is none of those."
 (defun ai-pr--worktree (pr)
   "Return a worktree of this repository holding pull request PR, making it if needed.
 
-The branch is checked out by `gh', which knows how to reach a pull
-request from a fork and how to set the branch up so that pushing it goes
-back to the right place.  An existing worktree is re-entered -- which,
-since the agents run under tmux, re-attaches to the conversation already
-living there."
+It is ~/src/<repo>-<branch>-pr<N>, named for the pull request's branch
+as well as its number.  The branch is checked out by `gh', which knows
+how to reach a pull request from a fork and how to set the branch up so
+that pushing it goes back to the right place.  An existing worktree --
+under that name, or the older ~/src/<repo>-pr<N> -- is re-entered,
+which, since the agents run under tmux, re-attaches to the conversation
+already living there."
   (let* ((pr (ai-gh--number "a pull request" pr))
          (root (directory-file-name (ai-pr--root)))
-         (worktree (ai-gh--worktree-name "pr" pr)))
-    (cond
-     ((file-directory-p worktree)
-      (message "Re-using existing worktree %s" worktree))
-     ((file-exists-p worktree)
-      (user-error "%s exists and is not a directory" worktree))
-     (t
+         (existing (ai-gh--existing "pr" pr root)))
+    (if existing
+        (progn (message "Re-using existing worktree %s" existing)
+               (file-name-as-directory existing))
       (unless (executable-find "gh")
         (user-error "gh is not installed; it is what fetches a pull request"))
-      (ai-wt--git root "worktree" "add" "--detach" "--" worktree "HEAD")
-      (let ((default-directory (file-name-as-directory worktree)))
-        (unless (eq 0 (call-process "gh" nil nil nil "pr" "checkout" pr))
-          ;; Leave nothing behind when the checkout fails.
-          (ai-wt--git root "worktree" "remove" "--force" "--" worktree)
-          (user-error "Could not check out pull request %s" pr)))))
-    (file-name-as-directory worktree)))
+      (let* ((branch (let ((default-directory (file-name-as-directory root)))
+                       (string-trim
+                        (shell-command-to-string
+                         (concat "gh pr view " pr
+                                 " --json headRefName --jq .headRefName"
+                                 " 2>/dev/null")))))
+             (worktree (ai-gh--worktree-name "pr" pr root branch)))
+        (when (file-exists-p worktree)
+          (user-error "%s exists and is not a worktree of %s" worktree root))
+        (ai-wt--git root "worktree" "add" "--detach" "--" worktree "HEAD")
+        (let ((default-directory (file-name-as-directory worktree)))
+          (unless (eq 0 (call-process "gh" nil nil nil "pr" "checkout" pr))
+            ;; Leave nothing behind when the checkout fails.
+            (ai-wt--git root "worktree" "remove" "--force" "--" worktree)
+            (user-error "Could not check out pull request %s" pr)))
+        (file-name-as-directory worktree)))))
 
 ;;;; An issue, in a worktree of its own
 ;;
@@ -2806,9 +2854,9 @@ DIRECTORY was not there before."
 (defun claude-pr (pr &optional text)
   "Start Claude reviewing pull request PR of this repository, in its own worktree.
 
-The pull request is checked out in ~/src/<repo>-pr<PR>, so Claude can
-read, build, commit and push the branch while the checkout being read
-stays as it was.  Once it is waiting for input it is asked for
+The pull request is checked out in ~/src/<repo>-<branch>-pr<PR>, so
+Claude can read, build, commit and push the branch while the checkout
+being read stays as it was.  Once it is waiting for input it is asked for
 `ai-pr-prompt': review the pull request, fix what it finds, format the R
 it touches with air, and push the branch back.  With a prefix argument,
 edit what it is asked first; TEXT is that, from Lisp.  See

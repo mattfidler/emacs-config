@@ -3,7 +3,7 @@
 # loose in it.
 #
 # `claude-pr 1290' puts pull request 1290 of the current repository in
-# ~/src/<repo>-pr1290 and runs claude there, so the agent can read, build, commit
+# ~/src/<repo>-<branch>-pr1290 and runs claude there, so the agent can read, build, commit
 # and push the branch without touching the checkout you are reading.  `agy-pr',
 # `copilot-pr', `opencode-pr', `kilo-pr' and `codex-pr' do the same with
 # antigravity, Copilot, opencode, kilo and Codex.  Like ai-tmux and ai-wt, one copy serves every agent and
@@ -85,12 +85,21 @@ case $pr in
     ''|*[!0-9]*) die "not a pull request number: ${pr:-(none)}" ;;
 esac
 
-worktree="$(dirname -- "$root")/$(basename -- "$root")-pr$pr"
-
-if [ -e "$worktree" ]; then
-    [ -d "$worktree" ] || die "$worktree exists and is not a directory"
+# Named for the pull request's branch as well as its number, so the directory
+# says what is in it.  One made before that -- <repo>-pr<N> -- is re-entered all
+# the same.
+if worktree=$(ai_ask_existing "$root" pr "$pr"); then
     printf 'Re-using existing worktree %s\n' "$worktree"
 else
+    branch=$(cd "$root" && gh pr view "$pr" --json headRefName \
+                 --jq .headRefName 2>/dev/null)
+    # fix/something becomes fix-something: safe in a file name, and the same
+    # name ai-gh--worktree-name in emacs-config.el gives it.
+    branch=$(printf '%s' "$branch" | tr -cs 'A-Za-z0-9_.-' '-' |
+                 sed -e 's/--*/-/g' -e 's/^[-.]*//' -e 's/[-.]*$//')
+    worktree="$(dirname -- "$root")/$(basename -- "$root")-${branch:+$branch-}pr$pr"
+    [ -e "$worktree" ] &&
+        die "$worktree exists and is not a worktree of $root"
     # Add the worktree detached first, then let gh do the checkout in it: gh
     # knows how to reach a pull request from a fork, and how to set the branch
     # up so that pushing it goes back to the right place.

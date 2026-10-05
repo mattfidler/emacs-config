@@ -388,8 +388,9 @@ reading stays as you left it.
 Asking with no argument completes over the repository's open pull requests,
 newest first, annotated with the title and who opened it; a number, a `#number`
 or the URL of one all work, so a closed pull request can still be typed in.  The
-worktree is `~/src/<repo>-pr<N>` -- a flat sibling of the repository even when
-asked for from inside another worktree.  Pull requests that already have one are
+worktree is `~/src/<repo>-<branch>-pr<N>`, its branch made safe for a file name
+(`fix/something` becomes `fix-something`) -- a flat sibling of the repository
+even when asked for from inside another worktree.  Pull requests that already have one are
 left out of the list, since an agent is living in those: typing the number in
 anyway re-enters it, which re-attaches to the conversation already there.
 
