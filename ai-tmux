@@ -104,7 +104,21 @@ if [ $# -gt 0 ] && [ -z "$(setting SESSION)" ]; then
     done
 fi
 
+# When Emacs runs as emacs.service, everything it starts lands in that unit's
+# cgroup -- including the tmux server the first client here forks -- and
+# stopping the unit (emacsreset, logout, kill-emacs) kills the whole cgroup,
+# agents and all.  So when this is about to start the server, start it in a
+# transient scope of its own instead, which outlives emacs.service.  A client
+# attaching to a server that is already running needs none of this.
+scope=()
+if ! tmux -L "$socket" list-sessions >/dev/null 2>&1 &&
+       command -v systemd-run >/dev/null 2>&1 &&
+       systemctl --user show-environment >/dev/null 2>&1; then
+    scope=(systemd-run --user --scope --quiet --collect
+           --description="$tool agent tmux server" --)
+fi
+
 # -u TMUX: never nest, even when the caller is itself running under tmux.
 # new-session -A: attach to the session if it already exists, else create it.
-exec env -u TMUX tmux -L "$socket" -f "$conf" \
+exec "${scope[@]}" env -u TMUX tmux -L "$socket" -f "$conf" \
      new-session -A -s "$session" -c "$PWD" "$cmd"
