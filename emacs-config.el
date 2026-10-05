@@ -2452,7 +2452,7 @@ what the repository has."
   :group 'tools)
 
 (defcustom ai-pr-prompt
-  (concat "Can you review pull request #%p, and fix what you find, "
+  (concat "Can you review pull request #%p with %r, and fix what you find, "
           "committing and pushing to its branch often; run `air format .' "
           "over the R you touch before each commit, and if origin/%t has "
           "moved merge it in so the branch stays ready to review.  Once "
@@ -2482,6 +2482,7 @@ then stop: the agent's prompt, sitting there with the cursor in it."
   "`ai-pr-prompt' for pull request NUMBER."
   (format-spec ai-pr-prompt
                `((?p . ,number)
+                 (?r . ,ai-reviewer)
                  (?t . ,(or (ai-wt--trunk (ai-pr--root)) "main")))))
 
 (defun ai-pr--read-args (prompt)
