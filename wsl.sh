@@ -356,6 +356,11 @@ mkdir -p "${HOME}/.ccache"
 
 cp ccache "${HOME}/.ccache/ccache.conf"
 
+# The agent scripts, emacsreset and the rest, linked into ~/.local/bin; see
+# README.md.  Re-run install-scripts after a pull that adds a script or an agent.
+
+./install-scripts
+
 # Air, the R formatter Emacs runs through eglot; see README.md.  It installs
 # into ~/.local/bin, which Ubuntu's ~/.profile puts on PATH and Emacs adds to
 # exec-path itself, so it is told to leave the shell profiles alone.

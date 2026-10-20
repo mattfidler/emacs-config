@@ -274,55 +274,18 @@ mkdir -p "${HOME}/.ccache"
 cp ccache "${HOME}/.ccache/ccache.conf"
 
 # Claude Code, Antigravity, Copilot, opencode, kilo and Codex each run under a tmux
-# server of their own; see README.md.  One copy of each script serves every agent and works
-# out which one it is from the name it was called by, so install it once and link
-# the names.
+# server of their own, driven by the ai-* scripts here; see README.md.
+# install-scripts links those -- and worktree-cleanup, habit-hooks-next-slice,
+# emacsreset, authinfo-pass and bash-emacs.sh -- into ~/.local/bin and
+# ~/.config, so a `git pull' keeps them current.  Re-run it after a pull that
+# adds a script or an agent.
 
-mkdir -p "${HOME}/.local/bin"
-
-install -m 755 ai-tmux ai-wt ai-pr ai-issue ai-ask "${HOME}/.local/bin/"
-
-for agent in claude antigravity agy copilot opencode kilo kilocode codex; do
-    ln -sfn ai-tmux "${HOME}/.local/bin/${agent}-tmux"
-    ln -sfn ai-wt   "${HOME}/.local/bin/${agent}-wt"
-    ln -sfn ai-pr   "${HOME}/.local/bin/${agent}-pr"
-    ln -sfn ai-issue "${HOME}/.local/bin/${agent}-issue"
-done
-
-mkdir -p "${HOME}/.config"
-
-install -m 644 ai-tmux.conf "${HOME}/.config/ai-tmux.conf"
-
-# worktree-cleanup clears away the worktrees those scripts leave behind once
-# their pull requests are merged or closed; habit-hooks-next-slice works
-# through habit-hooks findings one smell at a time.  See README.md.
-
-install -m 755 worktree-cleanup habit-hooks-next-slice "${HOME}/.local/bin/"
-
-# Run Emacs through the daemon rather than starting a second one, and add
-# emacsreset to stop the daemon so the next `emacs' picks up a config change.
-
-install -m 755 emacsreset "${HOME}/.local/bin/"
-
-install -m 644 bash-emacs.sh "${HOME}/.config/bash-emacs.sh"
-
-if ! grep -q 'bash-emacs.sh' "${HOME}/.bashrc"; then
-    cat >> "${HOME}/.bashrc" <<'EOF'
-
-# Run Emacs through the daemon rather than starting a second one, and add
-# emacsreset; see ~/src/emacs-config/README.md
-[ -f "$HOME/.config/bash-emacs.sh" ] && . "$HOME/.config/bash-emacs.sh"
-EOF
-fi
+./install-scripts
 
 # Mail: gmail synced into ~/.mail/gmail by mbsync, indexed by mu, read in mu4e;
 # see README.md for the app password and the first sync
 
 sudo apt-get install --assume-yes isync maildir-utils mu4e
-
-cp authinfo-pass "${HOME}/.local/bin/"
-
-chmod +x "${HOME}/.local/bin/authinfo-pass"
 
 cp mbsyncrc "${HOME}/.mbsyncrc"
 

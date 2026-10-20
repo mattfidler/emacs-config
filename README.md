@@ -146,23 +146,22 @@ sourced by two of the others and has no names of its own.
 | `ai-issue` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo,codex}-issue` | cuts a worktree for an issue, starts an agent in it and asks it to fix the issue through to a pull request |
 | `ai-ask` | `~/.local/bin/ai-ask` | sourced by `ai-pr` and `ai-issue`: the session name, the not-yet-started list, and typing the request in once the agent is waiting |
 
-`setup.sh` installs all six.  On a machine that already has them:
+They are linked into `~/.local/bin`, not copied, so they stay in step with
+`emacs-config.el`, which is loaded straight out of this checkout: a `git pull`
+updates both.  `install-scripts` makes the links -- for these six and for
+`worktree-cleanup`, `habit-hooks-next-slice`, `emacsreset`, `authinfo-pass` and
+`bash-emacs.sh` -- and `setup.sh` and `wsl.sh` run it.  On a machine that already
+has Emacs, or whose scripts were copied in by an older `setup.sh`:
 
 ```sh
-cd ~/src/emacs-config
-install -m 755 ai-tmux ai-wt ai-pr ai-issue ai-ask ~/.local/bin/
-for agent in claude antigravity agy copilot opencode kilo kilocode codex; do
-  ln -sfn ai-tmux ~/.local/bin/$agent-tmux
-  ln -sfn ai-wt   ~/.local/bin/$agent-wt
-  ln -sfn ai-pr   ~/.local/bin/$agent-pr
-  ln -sfn ai-issue ~/.local/bin/$agent-issue
-done
-install -m 644 ai-tmux.conf ~/.config/ai-tmux.conf
-install -m 755 worktree-cleanup habit-hooks-next-slice ~/.local/bin/
-install -m 755 emacsreset ~/.local/bin/
-install -m 644 bash-emacs.sh ~/.config/bash-emacs.sh
-echo '[ -f "$HOME/.config/bash-emacs.sh" ] && . "$HOME/.config/bash-emacs.sh"' >> ~/.bashrc
+~/src/emacs-config/install-scripts -n   # what would change
+~/src/emacs-config/install-scripts
 ```
+
+It can be run any number of times.  Copies are replaced by links, names for
+agents no longer listed (`gemini-tmux` and the like) are removed, and
+`bash-emacs.sh` is sourced from `~/.bashrc` if it is not already.  Run it again
+after a pull that adds a script or an agent; after that it is on `PATH` itself.
 
 opencode's installer puts its binary in `~/.opencode/bin` and adds that to `PATH`
 in `~/.bashrc` -- a file only an *interactive* shell reads.  systemd starts
@@ -448,7 +447,7 @@ name used everywhere else here, because it is the one the CLI spells its own
 ### Cleaning up worktrees
 
 Every `-wt`, `-pr` and `-issue` leaves a worktree behind, and they pile up.
-`worktree-cleanup` (installed by `setup.sh` into `~/.local/bin`) removes the
+`worktree-cleanup` (linked into `~/.local/bin` by `install-scripts`) removes the
 ones whose work is finished, which means one of these is true:
 
 - the branch's HEAD is already in `main` / `origin/main`
@@ -617,8 +616,8 @@ air format .
 
 [habit-hooks](https://github.com/habit-hooks/habit-hooks) runs before an agent calls its work done (see
 `~/.claude/CLAUDE.md`).  Turned on in a package that has never had it, it reports
-everything at once.  `habit-hooks-next-slice` (installed by `setup.sh` into
-`~/.local/bin`) lets the backlog be worked through one (language, smell) slice at
+everything at once.  `habit-hooks-next-slice` (linked into `~/.local/bin` by
+`install-scripts`) lets the backlog be worked through one (language, smell) slice at
 a time.  It sits on top of the snooze index `.habit-hooks/snooze.json`:
 
 ```sh
