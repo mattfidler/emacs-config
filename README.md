@@ -158,6 +158,7 @@ for agent in claude antigravity agy copilot opencode kilo kilocode codex; do
   ln -sfn ai-issue ~/.local/bin/$agent-issue
 done
 install -m 644 ai-tmux.conf ~/.config/ai-tmux.conf
+install -m 755 worktree-cleanup habit-hooks-next-slice ~/.local/bin/
 install -m 755 emacsreset ~/.local/bin/
 install -m 644 bash-emacs.sh ~/.config/bash-emacs.sh
 echo '[ -f "$HOME/.config/bash-emacs.sh" ] && . "$HOME/.config/bash-emacs.sh"' >> ~/.bashrc
@@ -444,6 +445,34 @@ the same `tmux -L kilo` session rather than two servers; in Emacs `kilocode`,
 name used everywhere else here, because it is the one the CLI spells its own
 `~/.config/kilo` and `~/.local/share/kilo` with.
 
+### Cleaning up worktrees
+
+Every `-wt`, `-pr` and `-issue` leaves a worktree behind, and they pile up.
+`worktree-cleanup` (installed by `setup.sh` into `~/.local/bin`) removes the
+ones whose work is finished, which means one of these is true:
+
+- the branch's HEAD is already in `main` / `origin/main`
+- its content is in `main` (a squash merge)
+- GitHub says its pull request was merged, or closed without merging
+
+A worktree whose name ends in `-prN` (`ai-pr` names them
+`<repo>-<branch>-prN`) is matched to pull request #N. Any other worktree is matched by its branch name.  Nothing is lost:
+before a worktree goes, commits not in `main`, uncommitted changes and untracked
+files are saved as patches under `~/.local/share/worktree-cleanup`.  Ignored
+build output (`.o`, `.so`, `src/*.rds`) goes with the directory.  Worktrees that
+are not merged, and ones with no pull request, are listed at the end and kept.
+
+```sh
+worktree-cleanup -n          # what would go, removing nothing
+worktree-cleanup -f          # fetch first, then clean the nlmixr2-verse repos under ~/src
+worktree-cleanup -a          # every repo under ~/src that has worktrees
+worktree-cleanup rxode2      # just one
+worktree-cleanup --list-patches
+worktree-cleanup --clean-patches-older 30
+```
+
+`--help` lists the rest of the options.
+
 ### Copying out of an agent
 
 Claude copies with `tmux load-buffer -w -`, and tmux only honours the `-w` --
@@ -583,3 +612,22 @@ file and format it all at once, so the restyle lands as a commit of its own:
 ```sh
 air format .
 ```
+
+## habit-hooks, one slice at a time
+
+[habit-hooks](https://github.com/habit-hooks/habit-hooks) runs before an agent calls its work done (see
+`~/.claude/CLAUDE.md`).  Turned on in a package that has never had it, it reports
+everything at once.  `habit-hooks-next-slice` (installed by `setup.sh` into
+`~/.local/bin`) lets the backlog be worked through one (language, smell) slice at
+a time.  It sits on top of the snooze index `.habit-hooks/snooze.json`:
+
+```sh
+habit-sensors --all --no-snooze | habit-snooze --snooze   # once: snooze everything
+habit-hooks-next-slice --list             # what is left, with counts
+habit-hooks-next-slice LANGUAGE SMELL     # un-snooze the files in one slice
+# ... fix them ...
+habit-hooks-next-slice --resnooze         # snooze whatever is still found
+```
+
+A file with nothing left to fix produces no findings, so `--resnooze` is always
+safe to run.  Run it from the project's top directory.

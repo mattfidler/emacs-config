@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""Work through habit-hooks findings one (language, smell) slice at a time.
+
+The snooze index (.habit-hooks/snooze.json) keys by file path, not by smell,
+so this layers slicing on top of it rather than replacing it:
+
+  habit-hooks-next-slice --list              # remaining slices, with counts
+  habit-hooks-next-slice <language> <smell>   # un-snooze just that slice's files
+  habit-hooks-next-slice --resnooze           # re-snooze whatever's still found
+
+Workflow: snooze everything once as a baseline
+(`habit-sensors --all --no-snooze | habit-snooze --snooze`), then repeatedly
+open one slice, fix it, and --resnooze before opening the next. A fixed file
+produces no findings regardless of its snooze state, so --resnooze is always
+safe to run — it only re-snoozes what still needs it.
+
+Run from inside the project directory.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+SNOOZE_PATH = Path(".habit-hooks/snooze.json")
+
+
+def run_sensors() -> list[dict]:
+    result = subprocess.run(
+        ["habit-sensors", "--all", "--no-snooze"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode not in (0, 1):
+        sys.stderr.write(result.stderr)
+        sys.exit(result.returncode)
+    return json.loads(result.stdout)
+
+
+def load_snoozed() -> set[str]:
+    if not SNOOZE_PATH.exists():
+        return set()
+    return set(json.loads(SNOOZE_PATH.read_text(encoding="utf-8")))
+
+
+def save_snoozed(keys: set[str]) -> None:
+    SNOOZE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SNOOZE_PATH.write_text(json.dumps(sorted(keys)) + "\n", encoding="utf-8")
+
+
+def slices(findings: list[dict]) -> dict[tuple[str, str], int]:
+    counts: dict[tuple[str, str], int] = {}
+    for finding in findings:
+        if finding["smell"] == "incomplete-run":
+            continue
+        key = (finding.get("language") or "generic", finding["smell"])
+        counts[key] = counts.get(key, 0) + len(finding["issues"])
+    return counts
+
+
+def list_slices(findings: list[dict]) -> None:
+    for (language, smell), count in sorted(slices(findings).items()):
+        print(f"{language}: {smell} — {count} issues")
+
+
+def open_slice(findings: list[dict], language: str, smell: str) -> None:
+    matching: set[str] = set()
+    for finding in findings:
+        if finding["smell"] != smell:
+            continue
+        if (finding.get("language") or "generic") != language:
+            continue
+        matching.update(issue["key"] for issue in finding["issues"])
+    if not matching:
+        print(f"No current findings for {language}:{smell}.")
+        return
+    snoozed = load_snoozed()
+    save_snoozed(snoozed - matching)
+    print(f"Opened {len(matching)} file(s) for {language}:{smell}:")
+    for key in sorted(matching):
+        print(f"  {key}")
+
+
+def resnooze(findings: list[dict]) -> None:
+    snoozed = load_snoozed()
+    current = {
+        issue["key"]
+        for finding in findings
+        if finding["smell"] != "incomplete-run"
+        for issue in finding["issues"]
+    }
+    updated = snoozed | current
+    save_snoozed(updated)
+    print(f"Re-snoozed. {len(updated)} key(s) held in the index.")
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    findings = run_sensors()
+    if not args or args == ["--list"]:
+        list_slices(findings)
+    elif args == ["--resnooze"]:
+        resnooze(findings)
+    elif len(args) == 2:
+        open_slice(findings, args[0], args[1])
+    else:
+        sys.stderr.write(__doc__)
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,699 @@
+#!/usr/bin/env bash
+#
+# worktree-cleanup -- remove merged or closed-PR git worktrees, keeping any local work as patches.
+#
+# For each repo (default: the nlmixr2-verse packages under ~/src) every linked worktree is
+# classified as merged or not.  A worktree counts as merged when its HEAD is an ancestor
+# of main/origin/main, when its content is already in main (squash-merge), or when GitHub
+# reports its PR as merged.  A worktree whose PR was closed without merging is removed
+# too.  The PR is looked up by number when the worktree directory is named <repo>-prN
+# (the GitHub PR number), otherwise by branch name.  These worktrees are removed; before
+# removal any uncommitted change, untracked file, or commit not yet in main is written out
+# as a patch so nothing is lost.  Unmerged worktrees, and worktrees with no associated pull request,
+# are listed at the end.
+#
+# Usage: worktree-cleanup [options] [repo|path ...]
+# Run with --help for options.
+
+set -uo pipefail
+
+PROG=${0##*/}
+
+# ---------------------------------------------------------------- configuration
+
+SRC_DIR=${WORKTREE_CLEANUP_SRC:-$HOME/src}
+PATCH_DIR=${WORKTREE_CLEANUP_PATCH_DIR:-$HOME/.local/share/worktree-cleanup}
+# The nlmixr2-verse: the repos worktrees actually get created in.  Ones that are not
+# cloned locally are skipped without complaint, so this list can stay aspirational.
+DEFAULT_REPOS=(
+  rxode2 rxode2ll rxode2parse rxode2random rxode2et
+  nlmixr2 nlmixr2est nlmixr2extra nlmixr2plot nlmixr2lib nlmixr2data
+  nlmixr2save nlmixr2test nlmixr2shiny nlmixr2llm nlmixr2nn
+  babelmixr2 nonmem2rx monolix2rx
+  lotri dparser-R PreciseSums lbfgsb3c n1qn1c mm
+)
+MAX_UNTRACKED_BYTES=${WORKTREE_CLEANUP_MAX_UNTRACKED:-$((5 * 1024 * 1024))}
+
+dry_run=0
+assume_yes=0
+do_fetch=0
+use_gh=1
+keep_branches=0
+skip_claude=0
+scan_all=0
+list_repos=0
+list_patches=0
+clean_patches=0
+clean_patches_days=
+save_patches=1
+repos=()
+
+usage() {
+  cat <<EOF
+Usage: $PROG [options] [repo|path ...]
+
+Removes worktrees whose branches are already merged, or whose GitHub PR was
+closed, saving any local work as patches first.  A worktree directory named
+<repo>-prN (or <repo>-pr-N) is matched to GitHub PR #N.  With no repo arguments,
+operates on the nlmixr2-verse packages under $SRC_DIR (see --list-repos); any that are not cloned are skipped silently.
+
+Options:
+  -n, --dry-run       Report only; remove nothing.
+  -y, --yes           Do not prompt for confirmation.
+  -f, --fetch         'git fetch --prune origin' first (more accurate merge detection).
+  -a, --all           Every repo under $SRC_DIR that has linked worktrees,
+                      including third-party clones -- not just the default set.
+      --list-repos    Print the repos that would be scanned, then exit.
+      --no-gh         Skip the GitHub PR lookup (offline / faster, misses some squashes
+                      and all closed PRs).
+      --keep-branches Remove the worktrees but keep the local branches.
+      --skip-claude   Ignore worktrees living under a .claude directory.
+      --patch-dir DIR Where to write patches (default: $PATCH_DIR).
+  -h, --help          This message.
+
+Saved patches:
+      --list-patches      Show what is in the patch directory (with sizes/ages), then exit.
+      --clean-patches     Delete every saved patch, then exit.
+      --clean-patches-older N
+                          Delete saved patches more than N days old, then exit.
+      --no-patch          Do not save patches at all -- merged worktrees and any
+                          uncommitted work in them are simply deleted.
+
+A merged/closed worktree is removed only after these are saved (when non-empty):
+  <branch>.commits.patch     commits not present in main (git am / git apply)
+  <branch>.local.patch       uncommitted changes + untracked files (git apply)
+  <branch>.info              branch, path, HEAD, why it was considered merged
+
+Note: removing a worktree deletes its whole directory, including ignored build
+artifacts (.o/.so, src/*.rds, ...).  Only tracked and untracked-but-not-ignored
+content is captured in the patches.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case $1 in
+    -n|--dry-run)     dry_run=1 ;;
+    -y|--yes)         assume_yes=1 ;;
+    -f|--fetch)       do_fetch=1 ;;
+    -a|--all)         scan_all=1 ;;
+    --list-repos)     list_repos=1 ;;
+    --list-patches)   list_patches=1 ;;
+    --clean-patches)  clean_patches=1 ;;
+    --clean-patches-older)
+                      shift; clean_patches=1
+                      clean_patches_days=${1:?--clean-patches-older needs a number of days}
+                      case $clean_patches_days in
+                        ''|*[!0-9]*)
+                          printf '%s: --clean-patches-older needs a whole number of days\n' \
+                                 "$PROG" >&2; exit 2 ;;
+                      esac ;;
+    --no-patch|--no-patches) save_patches=0 ;;
+    --no-gh)          use_gh=0 ;;
+    --keep-branches)  keep_branches=1 ;;
+    --skip-claude)    skip_claude=1 ;;
+    --patch-dir)      shift; PATCH_DIR=${1:?--patch-dir needs an argument} ;;
+    -h|--help)        usage; exit 0 ;;
+    -*)               printf '%s: unknown option %s\n' "$PROG" "$1" >&2; usage >&2; exit 2 ;;
+    *)                repos+=("$1") ;;
+  esac
+  shift
+done
+
+# is_primary_repo <dir> -- true for a real checkout, false for a linked worktree of one
+# (a linked worktree's .git is a file pointing back at the parent, not a directory)
+is_primary_repo() {
+  [ -d "$1/.git" ] || return 1
+  [ "$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" = "$1" ]
+}
+
+# worktree_count <dir> -- number of linked worktrees (0 for a lone checkout)
+worktree_count() {
+  local n
+  n=$(git -C "$1" worktree list --porcelain 2>/dev/null | grep -c '^worktree ') || return 1
+  printf '%s\n' "$(( ${n:-1} - 1 ))"
+}
+
+# has_worktrees <dir> -- true when dir is a primary repo with at least one linked worktree
+has_worktrees() {
+  is_primary_repo "$1" || return 1
+  [ "$(worktree_count "$1")" -gt 0 ]
+}
+
+# discover_repos -- every repo under SRC_DIR that currently has linked worktrees
+discover_repos() {
+  local d
+  for d in "$SRC_DIR"/*/; do
+    d=${d%/}
+    has_worktrees "$d" && printf '%s\n' "${d##*/}"
+  done
+}
+
+# explicit arguments win; otherwise --all discovers, or fall back to the curated list
+using_defaults=0
+if [ ${#repos[@]} -gt 0 ]; then
+  :
+elif [ $scan_all -eq 1 ]; then
+  mapfile -t repos < <(discover_repos)
+  using_defaults=1
+else
+  repos=("${DEFAULT_REPOS[@]}")
+  using_defaults=1
+fi
+
+if [ $list_repos -eq 1 ]; then
+  for r in "${repos[@]}"; do
+    if [ -e "$SRC_DIR/$r/.git" ] || [ -e "$r/.git" ]; then
+      printf '%s\n' "$r"
+    else
+      printf '%s  (not cloned -- will be skipped)\n' "$r"
+    fi
+  done
+  exit 0
+fi
+
+[ ${#repos[@]} -eq 0 ] && { printf '%s: no repositories to scan\n' "$PROG" >&2; exit 1; }
+
+# ---------------------------------------------------------------- output helpers
+
+if [ -t 1 ]; then
+  C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
+  C_RED=$'\033[31m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'; C_BLUE=$'\033[34m'
+else
+  C_RESET=; C_BOLD=; C_DIM=; C_RED=; C_GREEN=; C_YELLOW=; C_BLUE=
+fi
+
+say()  { printf '%s\n' "$*"; }
+info() { printf '%s%s%s\n' "$C_DIM" "$*" "$C_RESET"; }
+warn() { printf '%s%s%s\n' "$C_YELLOW" "$*" "$C_RESET" >&2; }
+err()  { printf '%s%s%s\n' "$C_RED" "$*" "$C_RESET" >&2; }
+head1() { printf '\n%s== %s ==%s\n' "$C_BOLD" "$*" "$C_RESET"; }
+
+if [ $dry_run -eq 0 ] && [ $assume_yes -eq 0 ] && [ ! -t 0 ] && [ $list_patches -eq 0 ]; then
+  warn "$PROG: no terminal to confirm on; running as --dry-run."
+  dry_run=1
+fi
+
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+# ---------------------------------------------------------------- saved patches
+
+# patch_files [days] -- null-separated saved patches, optionally only ones older than N days
+patch_files() {
+  [ -d "$PATCH_DIR" ] || return 0
+  if [ -n "${1:-}" ]; then
+    find "$PATCH_DIR" -type f \( -name '*.patch' -o -name '*.info' \) -mtime "+$1" -print0
+  else
+    find "$PATCH_DIR" -type f \( -name '*.patch' -o -name '*.info' \) -print0
+  fi
+}
+
+do_list_patches() {
+  if [ ! -d "$PATCH_DIR" ]; then
+    info "no patch directory yet ($PATCH_DIR)"; return 0
+  fi
+  head1 "Saved patches  ($PATCH_DIR)"
+  local any=0 f
+  while IFS= read -r -d '' f; do
+    any=1
+    printf '  %8s  %s  %s\n' \
+      "$(du -h "$f" | cut -f1)" \
+      "$(date -r "$f" '+%Y-%m-%d %H:%M')" \
+      "${f#$PATCH_DIR/}"
+  done < <(patch_files | sort -z)
+  [ $any -eq 0 ] && { info "  (empty)"; return 0; }
+  printf '  %stotal %s%s\n' "$C_DIM" "$(du -sh "$PATCH_DIR" | cut -f1)" "$C_RESET"
+}
+
+do_clean_patches() {
+  local days=${1:-} files=() f
+  while IFS= read -r -d '' f; do files+=("$f"); done < <(patch_files "$days")
+
+  if [ ${#files[@]} -eq 0 ]; then
+    info "no saved patches${days:+ older than $days days} to remove"
+    return 0
+  fi
+
+  head1 "Removing ${#files[@]} saved patch file(s)${days:+ older than $days days}"
+  printf '  %s\n' "${files[@]#$PATCH_DIR/}"
+
+  if [ $dry_run -eq 1 ]; then
+    info "dry run: nothing deleted"; return 0
+  fi
+  if [ $assume_yes -eq 0 ]; then
+    local answer
+    printf '%sDelete these %d file(s)? [y/N] %s' "$C_BOLD" "${#files[@]}" "$C_RESET"
+    read -r answer </dev/tty || answer=n
+    case $answer in [yY]|[yY][eE][sS]) ;; *) info "kept"; return 0 ;; esac
+  fi
+
+  rm -f -- "${files[@]}" || { err "failed to remove some patches"; return 1; }
+  find "$PATCH_DIR" -mindepth 1 -type d -empty -delete 2>/dev/null
+  say "removed ${#files[@]} file(s) from $PATCH_DIR"
+}
+
+if [ $list_patches -eq 1 ]; then do_list_patches; exit 0; fi
+if [ $clean_patches -eq 1 ]; then do_clean_patches "$clean_patches_days"; exit $?; fi
+
+# Report accumulators (filled while scanning, printed at the end).
+removed_report=()
+failed_report=()
+unmerged_report=()
+nopr_report=()
+skipped_report=()
+scanned_repos=()
+
+# ---------------------------------------------------------------- git helpers
+
+# slug <string> -- filesystem-safe name
+slug() { printf '%s' "$1" | tr '/ :' '---' | tr -cd 'A-Za-z0-9._-'; }
+
+# main_refs <repo> -- echo the refs that count as "merged into", most local first
+main_refs() {
+  local repo=$1 ref out=()
+  for ref in main master; do
+    git -C "$repo" show-ref --verify --quiet "refs/heads/$ref" && out+=("$ref")
+  done
+  for ref in origin/main origin/master; do
+    git -C "$repo" show-ref --verify --quiet "refs/remotes/$ref" && out+=("$ref")
+  done
+  printf '%s\n' "${out[@]}"
+}
+
+# nwo <repo> -- echo owner/name parsed from the origin remote
+nwo() {
+  local url
+  url=$(git -C "$1" remote get-url origin 2>/dev/null) || return 1
+  url=${url%.git}
+  case $url in
+    git@*:*)      printf '%s\n' "${url#*:}" ;;
+    ssh://*|https://*|http://*|git://*)
+                  url=${url#*://}; url=${url#*@}; printf '%s\n' "${url#*/}" ;;
+    *)            return 1 ;;
+  esac
+}
+
+# merged_reason <repo> <sha> <refs...> -- echo why this is merged, or nothing
+merged_reason() {
+  local repo=$1 sha=$2; shift 2
+  local base mb tree fake
+
+  for base in "$@"; do
+    if git -C "$repo" merge-base --is-ancestor "$sha" "$base" 2>/dev/null; then
+      printf 'already an ancestor of %s\n' "$base"; return 0
+    fi
+  done
+
+  for base in "$@"; do
+    # Nothing of our own left: the branch tree matches main exactly.
+    if git -C "$repo" diff --quiet "$base" "$sha" -- 2>/dev/null; then
+      printf 'tree identical to %s\n' "$base"; return 0
+    fi
+    # Squash-merge: collapse the branch to one commit on the merge base and ask
+    # whether main already carries an equivalent patch.
+    mb=$(git -C "$repo" merge-base "$base" "$sha" 2>/dev/null) || continue
+    tree=$(git -C "$repo" rev-parse "$sha^{tree}" 2>/dev/null) || continue
+    fake=$(git -C "$repo" commit-tree "$tree" -p "$mb" -m squash-probe 2>/dev/null) || continue
+    if git -C "$repo" cherry "$base" "$fake" 2>/dev/null | grep -q '^-'; then
+      printf 'squash-merged into %s\n' "$base"; return 0
+    fi
+  done
+
+  return 1
+}
+
+# pr_state <repo> <branch> -- echo "STATE #NUM" (MERGED/OPEN/CLOSED), "NONE", or "UNKNOWN"
+declare -A PR_CACHE=()
+pr_state() {
+  local repo=$1 branch=$2 key="$repo|$2" out
+  [ -n "${PR_CACHE[$key]+x}" ] && { printf '%s\n' "${PR_CACHE[$key]}"; return; }
+
+  local result=UNKNOWN
+  if [ $use_gh -eq 1 ] && [ -n "$branch" ] && [ -n "${GH_REPO_NWO:-}" ]; then
+    out=$(gh pr list --repo "$GH_REPO_NWO" --head "$branch" --state all --limit 10 \
+            --json number,state,mergedAt 2>/dev/null)
+    if [ -n "$out" ]; then
+      # Prefer a merged PR, otherwise report the newest one found.
+      result=$(printf '%s' "$out" | gh_pick 2>/dev/null) || result=UNKNOWN
+      [ -z "$result" ] && result=NONE
+    fi
+  fi
+  PR_CACHE[$key]=$result
+  printf '%s\n' "$result"
+}
+
+gh_pick() {
+  # stdin: gh json array -> "STATE #NUM", preferring an open PR (work still live),
+  # then a merged one, else the newest
+  python3 -c '
+import json,sys
+try:
+    prs = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+if not prs:
+    print("")
+    sys.exit(0)
+opened = [p for p in prs if p.get("state") == "OPEN"]
+merged = [p for p in prs if p.get("mergedAt")]
+p = (opened or merged or prs)[0]
+print("%s #%s" % (p.get("state","?"), p.get("number","?")))
+'
+}
+
+# pr_number_from_path <worktree> -- echo N for a worktree directory named *-prN / *-pr-N
+pr_number_from_path() {
+  local base=${1##*/}
+  [[ $base =~ (^|[-_])[pP][rR]-?([0-9]+)$ ]] && printf '%s\n' "${BASH_REMATCH[2]}"
+}
+
+# pr_state_by_number <num> -- echo "STATE #NUM" for that PR, or "UNKNOWN"
+pr_state_by_number() {
+  local num=$1 key="$GH_REPO_NWO#$1" out
+  [ -n "${PR_CACHE[$key]+x}" ] && { printf '%s\n' "${PR_CACHE[$key]}"; return; }
+  out=$(gh pr view "$num" --repo "$GH_REPO_NWO" --json number,state \
+          --jq '"\(.state) #\(.number)"' 2>/dev/null)
+  [ -n "$out" ] || out=UNKNOWN
+  PR_CACHE[$key]=$out
+  printf '%s\n' "$out"
+}
+
+# ---------------------------------------------------------------- patch writing
+
+# write_patches <repo> <repo_name> <worktree> <branch> <sha> <reason> <outdir>
+# Echoes the patch files it created.  Returns 1 on failure.
+write_patches() {
+  local repo=$1 repo_name=$2 wt=$3 branch=$4 sha=$5 reason=$6 outdir=$7
+  local label; label=$(slug "${branch:-detached-${sha:0:8}}")
+  local stem="$outdir/${TIMESTAMP}-${label}"
+  local made=()
+
+  mkdir -p "$outdir" || return 1
+
+  # 1. commits on the branch that main does not have (empty for a clean merge).
+  local base=${MAIN_REFS[0]}
+  if [ -n "$(git -C "$repo" rev-list --count "$base..$sha" 2>/dev/null)" ] &&
+     [ "$(git -C "$repo" rev-list --count "$base..$sha" 2>/dev/null)" != "0" ]; then
+    if git -C "$repo" format-patch --stdout "$base..$sha" > "$stem.commits.patch" 2>/dev/null &&
+       [ -s "$stem.commits.patch" ]; then
+      made+=("$stem.commits.patch")
+    else
+      rm -f "$stem.commits.patch"
+    fi
+  fi
+
+  # 2. uncommitted changes plus untracked (non-ignored) files, as one applyable patch.
+  local local_patch="$stem.local.patch" skipped_big=()
+  : > "$local_patch"
+  git -C "$wt" diff HEAD --binary >> "$local_patch" 2>/dev/null
+
+  local f size
+  while IFS= read -r -d '' f; do
+    size=$(stat -c %s "$wt/$f" 2>/dev/null || echo 0)
+    if [ "$size" -gt "$MAX_UNTRACKED_BYTES" ]; then
+      skipped_big+=("$f ($size bytes)")
+      continue
+    fi
+    git -C "$wt" diff --no-index --binary -- /dev/null "$f" >> "$local_patch" 2>/dev/null
+  done < <(git -C "$wt" ls-files --others --exclude-standard -z 2>/dev/null)
+
+  if [ -s "$local_patch" ]; then made+=("$local_patch"); else rm -f "$local_patch"; fi
+
+  # 3. metadata, always written when there was anything to save.
+  if [ ${#made[@]} -gt 0 ]; then
+    {
+      printf 'repo:      %s (%s)\n' "$repo_name" "$repo"
+      printf 'worktree:  %s\n' "$wt"
+      printf 'branch:    %s\n' "${branch:-<detached>}"
+      printf 'HEAD:      %s\n' "$sha"
+      printf 'merged:    %s\n' "$reason"
+      printf 'saved:     %s\n' "$(date -Is)"
+      printf '\nRestore into a checkout of %s with:\n' "$repo_name"
+      [ -f "$stem.commits.patch" ] && printf '  git am %s\n' "$stem.commits.patch"
+      [ -f "$local_patch" ]        && printf '  git apply %s\n' "$local_patch"
+      if [ ${#skipped_big[@]} -gt 0 ]; then
+        printf '\nUntracked files skipped for size (lost on removal):\n'
+        printf '  %s\n' "${skipped_big[@]}"
+      fi
+    } > "$stem.info"
+    made+=("$stem.info")
+  fi
+
+  [ ${#skipped_big[@]} -gt 0 ] &&
+    warn "  large untracked files not saved: ${skipped_big[*]}"
+
+  printf '%s\n' "${made[@]+"${made[@]}"}"
+}
+
+# ---------------------------------------------------------------- per-repo pass
+
+process_repo() {
+  local spec=$1 repo repo_name
+
+  if [ -d "$spec/.git" ] || [ -f "$spec/.git" ]; then repo=$spec
+  elif [ -d "$SRC_DIR/$spec" ];                  then repo=$SRC_DIR/$spec
+  elif [ $using_defaults -eq 1 ];                then return 0   # not cloned here; fine
+  else err "$PROG: no such repo: $spec"; return 1; fi
+
+  repo=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || {
+    [ $using_defaults -eq 1 ] && return 0
+    err "$PROG: not a git repository: $spec"; return 1; }
+  repo_name=${repo##*/}
+  scanned_repos+=("$repo")
+
+  # Nothing linked: stay quiet about it when working through the default list.
+  if ! has_worktrees "$repo"; then
+    [ $using_defaults -eq 1 ] && return 0
+    head1 "$repo_name  ($repo)"
+    info "no linked worktrees"
+    return 0
+  fi
+
+  head1 "$repo_name  ($repo)"
+
+  if [ $do_fetch -eq 1 ]; then
+    info "fetching origin ..."
+    git -C "$repo" fetch --prune --quiet origin || warn "  fetch failed; using local refs"
+  fi
+
+  mapfile -t MAIN_REFS < <(main_refs "$repo")
+  if [ ${#MAIN_REFS[@]} -eq 0 ]; then
+    err "  no main/master branch found; skipping"; return 1
+  fi
+  info "merge targets: ${MAIN_REFS[*]}"
+
+  GH_REPO_NWO=
+  if [ $use_gh -eq 1 ]; then
+    if command -v gh >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+      GH_REPO_NWO=$(nwo "$repo") || GH_REPO_NWO=
+    else
+      info "gh or python3 unavailable; skipping PR lookup"
+    fi
+  fi
+
+  # Parse the worktree list.
+  local -a wt_path=() wt_head=() wt_branch=() wt_flags=()
+  local line path head branch flags
+  path=; head=; branch=; flags=
+  while IFS= read -r line; do
+    case $line in
+      "worktree "*) path=${line#worktree }; head=; branch=; flags= ;;
+      "HEAD "*)     head=${line#HEAD } ;;
+      "branch "*)   branch=${line#branch refs/heads/} ;;
+      bare|detached) flags="$flags $line" ;;
+      "locked"*|"prunable"*) flags="$flags ${line%% *}" ;;
+      "")
+        [ -n "$path" ] && { wt_path+=("$path"); wt_head+=("$head"); wt_branch+=("$branch"); wt_flags+=("$flags"); }
+        path=; head=; branch=; flags= ;;
+    esac
+  done < <(git -C "$repo" worktree list --porcelain; printf '\n')
+
+  local i n=${#wt_path[@]}
+  local -a to_remove_path=() to_remove_branch=() to_remove_sha=() to_remove_reason=()
+
+  for ((i = 0; i < n; i++)); do
+    path=${wt_path[$i]}; head=${wt_head[$i]}; branch=${wt_branch[$i]}; flags=${wt_flags[$i]}
+
+    # The primary worktree and the main branch itself always stay.
+    [ "$path" = "$repo" ] && continue
+    case " ${MAIN_REFS[*]} " in *" $branch "*) continue ;; esac
+    case $flags in *bare*) continue ;; esac
+
+    if [ $skip_claude -eq 1 ] && [[ $path == */.claude/* ]]; then
+      skipped_report+=("$repo_name  $path  (--skip-claude)"); continue
+    fi
+    case $flags in
+      *locked*)   skipped_report+=("$repo_name  $path  (worktree is locked)"); continue ;;
+      *prunable*) skipped_report+=("$repo_name  $path  (prunable; run 'git worktree prune')"); continue ;;
+    esac
+    if [ ! -d "$path" ]; then
+      skipped_report+=("$repo_name  $path  (directory missing)"); continue
+    fi
+    if [[ $PWD == "$path" || $PWD == "$path"/* ]]; then
+      skipped_report+=("$repo_name  $path  (you are standing in it)"); continue
+    fi
+
+    local reason ahead dirty pr prnum label color
+    reason=$(merged_reason "$repo" "$head" "${MAIN_REFS[@]}")
+
+    # A worktree named <repo>-prN is checked out for GitHub PR #N; trust that
+    # over a branch-name lookup (the branch may be detached or named differently).
+    pr=NONE
+    prnum=$(pr_number_from_path "$path")
+    if [ -n "$prnum" ] && [ -n "$GH_REPO_NWO" ]; then
+      pr=$(pr_state_by_number "$prnum")
+    fi
+    if [ "$pr" = NONE ] || [ "$pr" = UNKNOWN ]; then
+      if [ -n "$branch" ] && [ -n "$GH_REPO_NWO" ]; then
+        pr=$(pr_state "$repo" "$branch")
+      elif [ -z "$branch" ] && [ -z "$prnum" ]; then
+        pr="n/a (detached)"
+      fi
+    fi
+    # Named for a PR, so never report it as having none.
+    if [ -n "$prnum" ] && { [ "$pr" = NONE ] || [[ $pr == n/a* ]]; }; then
+      pr="UNKNOWN #$prnum"
+    fi
+
+    # GitHub knows about squash/rebase merges the local heuristics can miss,
+    # and a closed PR means the work was abandoned -- both get cleaned up.
+    label=MERGED; color=$C_GREEN
+    if [ -z "$reason" ] && [[ $pr == MERGED* ]]; then
+      reason="GitHub PR ${pr#MERGED } merged"
+    elif [ -z "$reason" ] && [[ $pr == CLOSED* ]]; then
+      reason="GitHub PR ${pr#CLOSED } closed without merging"
+      label=CLOSED; color=$C_YELLOW
+    fi
+
+    ahead=$(git -C "$repo" rev-list --count "${MAIN_REFS[0]}..$head" 2>/dev/null || echo '?')
+    dirty=$(git -C "$repo" -C "$path" status --porcelain 2>/dev/null | wc -l)
+
+    if [ -n "$reason" ]; then
+      to_remove_path+=("$path"); to_remove_branch+=("$branch")
+      to_remove_sha+=("$head");  to_remove_reason+=("$reason")
+      printf '  %s%s%s  %-52s %s%s%s\n' "$color" "$label" "$C_RESET" \
+             "${branch:-<detached ${head:0:8}>}" "$C_DIM" "$reason" "$C_RESET"
+      [ "$dirty" -gt 0 ] && info "            $dirty uncommitted/untracked path(s) -> patch"
+    else
+      printf '  %skeep%s    %-52s %s%s ahead of %s, PR: %s%s\n' "$C_BLUE" "$C_RESET" \
+             "${branch:-<detached ${head:0:8}>}" "$C_DIM" "$ahead" "${MAIN_REFS[0]}" "$pr" "$C_RESET"
+      unmerged_report+=("$(printf '%-12s %-46s %-40s %s ahead, %s dirty, PR: %s' \
+        "$repo_name" "${branch:-<detached ${head:0:8}>}" "$path" "$ahead" "$dirty" "$pr")")
+      if [ "$pr" = "NONE" ] || [[ $pr == n/a* ]]; then
+        nopr_report+=("$(printf '%-12s %-46s %-40s %s ahead, %s dirty (%s)' \
+          "$repo_name" "${branch:-<detached ${head:0:8}>}" "$path" "$ahead" "$dirty" \
+          "$([ "$pr" = NONE ] && echo 'no pull request' || echo 'detached HEAD')")")
+      fi
+    fi
+  done
+
+  local nrm=${#to_remove_path[@]}
+  if [ "$nrm" -eq 0 ]; then
+    info "nothing merged or closed to clean up"
+    return 0
+  fi
+
+  if [ $dry_run -eq 1 ]; then
+    info "dry run: would remove $nrm worktree(s) from $repo_name"
+    return 0
+  fi
+
+  if [ $assume_yes -eq 0 ]; then
+    local answer
+    [ $save_patches -eq 0 ] && warn "  --no-patch: local work in these worktrees will NOT be saved"
+    printf '%sRemove %d merged/closed worktree(s) from %s? [y/N] %s' "$C_BOLD" "$nrm" "$repo_name" "$C_RESET"
+    read -r answer </dev/tty || answer=n
+    case $answer in
+      [yY]|[yY][eE][sS]) ;;
+      *) info "skipped $repo_name"; return 0 ;;
+    esac
+  fi
+
+  local outdir="$PATCH_DIR/$repo_name" patches
+  for ((i = 0; i < nrm; i++)); do
+    path=${to_remove_path[$i]}; branch=${to_remove_branch[$i]}
+    head=${to_remove_sha[$i]};  reason=${to_remove_reason[$i]}
+
+    if [ $save_patches -eq 1 ]; then
+      patches=$(write_patches "$repo" "$repo_name" "$path" "$branch" "$head" "$reason" "$outdir")
+      if [ -n "$patches" ]; then
+        say "  saved:"
+        printf '    %s\n' $patches
+      fi
+    fi
+
+    if git -C "$repo" worktree remove --force "$path" 2>/dev/null; then
+      say "  ${C_GREEN}removed${C_RESET} $path"
+      removed_report+=("$(printf '%-12s %-46s %s' "$repo_name" "${branch:-<detached>}" "$path")")
+    else
+      err "  failed to remove $path"
+      failed_report+=("$(printf '%-12s %s' "$repo_name" "$path")")
+      continue
+    fi
+
+    if [ -n "$branch" ] && [ $keep_branches -eq 0 ]; then
+      if git -C "$repo" branch -d "$branch" >/dev/null 2>&1 ||
+         git -C "$repo" branch -D "$branch" >/dev/null 2>&1; then
+        info "  deleted branch $branch"
+      else
+        warn "  could not delete branch $branch"
+      fi
+    fi
+  done
+
+  git -C "$repo" worktree prune
+}
+
+# ---------------------------------------------------------------- main
+
+for spec in "${repos[@]}"; do
+  process_repo "$spec"
+done
+
+head1 "Summary"
+
+if [ ${#removed_report[@]} -gt 0 ]; then
+  printf '%sRemoved (merged / PR closed)%s\n' "$C_GREEN" "$C_RESET"
+  printf '  %s\n' "${removed_report[@]}"
+  printf '  %spatches under %s%s\n' "$C_DIM" "$PATCH_DIR" "$C_RESET"
+else
+  info "Removed (merged / PR closed): none"
+fi
+
+if [ ${#unmerged_report[@]} -gt 0 ]; then
+  printf '\n%sNot merged -- kept%s\n' "$C_BOLD" "$C_RESET"
+  printf '  %s\n' "${unmerged_report[@]}"
+fi
+
+if [ ${#nopr_report[@]} -gt 0 ]; then
+  printf '\n%sNo pull request associated%s\n' "$C_BOLD" "$C_RESET"
+  printf '  %s\n' "${nopr_report[@]}"
+  [ $use_gh -eq 0 ] && info "  (--no-gh was given; this list is unreliable)"
+fi
+
+if [ ${#skipped_report[@]} -gt 0 ]; then
+  printf '\n%sSkipped%s\n' "$C_YELLOW" "$C_RESET"
+  printf '  %s\n' "${skipped_report[@]}"
+fi
+
+# Nothing should hide: name any other repo under ~/src that still holds worktrees.
+unscanned=()
+for d in "$SRC_DIR"/*/; do
+  d=${d%/}
+  case " ${scanned_repos[*]-} " in *" $d "*) continue ;; esac
+  has_worktrees "$d" || continue
+  unscanned+=("$(printf '%-28s %s linked worktree(s)  %s' "${d##*/}" "$(worktree_count "$d")" \
+    "$(git -C "$d" remote get-url origin 2>/dev/null || echo 'no origin')")")
+done
+if [ ${#unscanned[@]} -gt 0 ]; then
+  printf '\n%sOther repos in %s with worktrees (not scanned)%s\n' "$C_BOLD" "$SRC_DIR" "$C_RESET"
+  printf '  %s\n' "${unscanned[@]}"
+  info "  add them by name, or rescan everything with --all"
+fi
+
+if [ ${#failed_report[@]} -gt 0 ]; then
+  printf '\n%sFailed to remove%s\n' "$C_RED" "$C_RESET"
+  printf '  %s\n' "${failed_report[@]}"
+  exit 1
+fi
+
+exit 0

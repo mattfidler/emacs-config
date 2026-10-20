@@ -293,6 +293,12 @@ mkdir -p "${HOME}/.config"
 
 install -m 644 ai-tmux.conf "${HOME}/.config/ai-tmux.conf"
 
+# worktree-cleanup clears away the worktrees those scripts leave behind once
+# their pull requests are merged or closed; habit-hooks-next-slice works
+# through habit-hooks findings one smell at a time.  See README.md.
+
+install -m 755 worktree-cleanup habit-hooks-next-slice "${HOME}/.local/bin/"
+
 # Run Emacs through the daemon rather than starting a second one, and add
 # emacsreset to stop the daemon so the next `emacs' picks up a config change.
 
