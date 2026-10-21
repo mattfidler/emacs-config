@@ -2473,42 +2473,87 @@ already living there."
 ;; fix it, keep the branch mergeable, get it reviewed by a different model, and
 ;; open the pull request at the end.
 
-(defcustom ai-reviewer "agy"
-  "The agent asked to review an issue's fix before its pull request opens.
+(defcustom ai-reviewer nil
+  "The one agent to name as independent reviewer, or nil for the chain.
 
-Named in `ai-issue-prompt' as the independent reviewer to prefer, and
-reached through its code-review skill -- so \"agy\" for the
-antigravity-code-review skill, \"copilot\" or \"kilo\" for theirs."
-  :type 'string
+nil, the default, leaves the choice to ai-ask, the same as on the shell:
+agy, then codex, then Claude Fable (AI_REVIEWERS to change the order),
+less the agent doing the work and any reviewer whose credits have run
+out.  One that has run out is marked by AI_AGY_OUT_UNTIL,
+AI_CODEX_OUT_UNTIL or AI_FABLE_OUT_UNTIL in ~/.bashrc: the date its
+credits come back.  A string here is passed on as AI_REVIEWER and named
+outright."
+  :type '(choice (const :tag "agy, codex, then Fable, by credits" nil)
+                 string)
   :group 'tools)
+
+(defun ai-ask--call (function &rest args)
+  "The lines FUNCTION of the ai-ask script prints, given ARGS.
+
+The very code ai-pr and ai-issue run on the shell, so the two cannot
+drift apart.  It runs in an interactive bash: the daemon was started by
+systemd, which never read ~/.bashrc, and that is where the dates a
+reviewer's credits come back are set.  What it warns about is echoed."
+  (let ((ask (or (executable-find "ai-ask")
+                 (user-error "ai-ask is not on PATH; run install-scripts")))
+        (errors (make-temp-file "ai-ask")))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((status (apply #'call-process "bash" nil (list t errors) nil
+                               "-ic" ". \"$1\" && shift && printf '\\036' && \"$@\""
+                               "ai-ask" ask function args)))
+            (with-temp-buffer
+              (insert-file-contents errors)
+              (dolist (line (split-string (buffer-string) "\n" t))
+                (when (string-prefix-p "ai-ask: " line)
+                  (message "%s" line))))
+            ;; Whatever ~/.bashrc printed comes before the marker.
+            (goto-char (point-min))
+            (unless (and (eq status 0) (search-forward "\036" nil t))
+              (error "ai-ask: %s failed" function))
+            (split-string (buffer-substring (point) (point-max)) "\n" t)))
+      (delete-file errors))))
+
+(defun ai-ask--reviewer (agent)
+  "The independent reviewer AGENT is asked to use, in words for its prompt."
+  (let ((process-environment
+         (if ai-reviewer
+             (cons (concat "AI_REVIEWER=" ai-reviewer) process-environment)
+           process-environment)))
+    (string-join (ai-ask--call "ai_ask_reviewer_text" agent) " ")))
 
 (defcustom ai-issue-prompt
   (concat "Can you fix issue #%i, committing and pushing often, for each "
           "commit if origin/%t has moved, merge the commit with origin/%t "
           "so it will be ready to review once the fix is complete.  Once the "
           "fix is complete, review with an independent reviewer (preferring "
-          "%r with skill) until no issues remain.  Once the review is clean "
-          "formatted with air, and changes are linted, open a pull request to "
-          "fix the issue. Monitor every hour and fix any CI/CD issues as well as "
+          "%r) until no issues remain.  Once the review is clean "
+          "formatted with air, and changes are linted, open a pull request "
+          "into %t to fix the issue. Monitor every hour and fix any CI/CD issues as well as "
           "merging origin/%t as needed to keep this ready for human review and integration")
   "What an agent started on an issue is asked to do.
 
-%i is replaced by the issue number, %r by `ai-reviewer' and %t by the
-trunk branch the worktree was cut from -- main, or master where that is
-what the repository has."
+%i is replaced by the issue number, %r by the reviewer -- see
+`ai-reviewer' -- and %t by the branch the worktree was cut from and the
+pull request goes into: the trunk, main or master, unless
+AI_ISSUE_BASE names another."
   :type 'string
   :group 'tools)
 
 (defcustom ai-pr-prompt
-  (concat "Can you review pull request #%p with %r, and fix what you find, "
-          "committing and pushing to its branch often; run `air format .' "
-          "over the R you touch before each commit, and if origin/%t has "
-          "moved merge it in so the branch stays ready to review.  Once "
-          "nothing is left to fix, say on the pull request what you changed")
+  (concat "Can you review pull request #%p with an independent reviewer "
+          "(preferring %r), and fix what you find, committing and pushing "
+          "to its branch often; run `air format .' over the R you touch "
+          "before each commit, and %m.  Once nothing is left to fix, say on "
+          "the pull request what you changed")
   "What an agent started on a pull request is asked to do.
 
-%p is replaced by the pull request number and %t by the trunk branch --
-main, or master where that is what the repository has."
+%p is replaced by the pull request number, %r by the reviewer -- see
+`ai-reviewer' -- %o by the remote that has the branch it targets and %t
+by that branch, which need not be the trunk.  %m is keeping up with it:
+merging it in, or, for a pull request stacked on another, rebasing the
+whole stack onto the branch the bottom of it targets.  The shell's
+ai-pr works these out, through ai-ask, the same way."
   :type 'string
   :group 'tools)
 
@@ -2526,20 +2571,25 @@ then stop: the agent's prompt, sitting there with the cursor in it."
   :type 'number
   :group 'tools)
 
-(defun ai-pr--prompt (number)
-  "`ai-pr-prompt' for pull request NUMBER."
-  (format-spec ai-pr-prompt
-               `((?p . ,number)
-                 (?r . ,ai-reviewer)
-                 (?t . ,(or (ai-wt--trunk (ai-pr--root)) "main")))))
+(defun ai-pr--prompt (agent number)
+  "`ai-pr-prompt' for AGENT on pull request NUMBER."
+  (let ((target (ai-ask--call "ai_ask_pr_target"
+                              (directory-file-name (ai-pr--root)) number)))
+    (format-spec ai-pr-prompt
+                 `((?p . ,number)
+                   (?r . ,(ai-ask--reviewer agent))
+                   (?o . ,(nth 0 target))
+                   (?t . ,(nth 1 target))
+                   (?m . ,(nth 2 target))))))
 
-(defun ai-pr--read-args (prompt)
-  "Read one of this repository's open pull requests, and what to ask about it.
+(defun ai-pr--read-args (prompt agent)
+  "Read one of this repository's open pull requests, and what to ask AGENT.
 
 The ones already checked out into a worktree are left out.  Returns a
 list (PR TEXT) for an interactive spec; see `ai-gh--read-args'."
   (ai-gh--read-args prompt (ai-gh--unstarted (ai-pr--open) "pr")
-                    'ai-pull-request "a pull request" #'ai-pr--prompt))
+                    'ai-pull-request "a pull request"
+                    (apply-partially #'ai-pr--prompt agent)))
 
 (defun ai-pr--start (agent start pr &optional text)
   "Set AGENT to work on reviewing PR, in a worktree of its own.
@@ -2548,7 +2598,8 @@ It is asked for TEXT, or `ai-pr-prompt' when that is nil, once it is
 waiting for input.  See `ai-gh--start'."
   (let ((number (ai-gh--number "a pull request" pr)))
     (ai-gh--start agent start (ai-pr--worktree number)
-                  (ai-gh--text text #'ai-pr--prompt number))))
+                  (ai-gh--text text (apply-partially #'ai-pr--prompt agent)
+                               number))))
 
 (defun ai-issue--open ()
   "The repository's open issues, as (NUMBER AUTHOR TITLE), newest first."
@@ -2562,20 +2613,25 @@ waiting for input.  See `ai-gh--start'."
                       "2>/dev/null"))
              "\n" t))))
 
-(defun ai-issue--read (prompt)
-  "Read one of this repository's open issues with PROMPT, and what to ask of it.
+(defun ai-issue--read (prompt agent)
+  "Read one of this repository's open issues with PROMPT, and what to ask AGENT.
 
 The ones that already have a worktree are left out; see
 `ai-gh--unstarted'.  Returns a list (ISSUE TEXT) for an interactive
 spec, as `ai-gh--read-args' does the work of."
   (ai-gh--read-args prompt (ai-gh--unstarted (ai-issue--open) "issue")
-                    'ai-issue "an issue" #'ai-issue--prompt))
+                    'ai-issue "an issue" (apply-partially #'ai-issue--prompt agent)))
 
-(defun ai-issue--prompt (number)
-  "`ai-issue-prompt' for issue NUMBER."
+(defun ai-issue--target (root)
+  "The branch an issue's fix in ROOT is cut from and its pull request goes into."
+  (or (car (ai-ask--call "ai_ask_issue_target" (directory-file-name root)))
+      (user-error "Cannot tell what the trunk of %s is" root)))
+
+(defun ai-issue--prompt (agent number)
+  "`ai-issue-prompt' for AGENT on issue NUMBER."
   (format-spec ai-issue-prompt
-               `((?i . ,number) (?r . ,ai-reviewer)
-                 (?t . ,(or (ai-wt--trunk (ai-pr--root)) "main")))))
+               `((?i . ,number) (?r . ,(ai-ask--reviewer agent))
+                 (?t . ,(ai-issue--target (ai-pr--root))))))
 
 (defun ai-issue--worktree (issue)
   "Return a worktree of this repository for fixing ISSUE, making it if needed.
@@ -2598,8 +2654,7 @@ simply re-entered."
      ((ai-wt--branch-p root branch)
       (ai-wt--git root "worktree" "add" "--" worktree branch))
      (t
-      (let ((trunk (or (ai-wt--trunk root)
-                       (user-error "Cannot tell what the trunk of %s is" root))))
+      (let ((trunk (ai-issue--target root)))
         (ai-wt--git root "fetch" "origin" trunk)
         (ai-wt--git root "worktree" "add" "--no-track" "-b" branch
                     "--" worktree (concat "origin/" trunk)))))
@@ -2691,7 +2746,8 @@ It is asked for TEXT, or `ai-issue-prompt' when that is nil, once it is
 waiting for input.  See `ai-gh--start'."
   (let ((number (ai-gh--number "an issue" issue)))
     (ai-gh--start agent start (ai-issue--worktree number)
-                  (ai-gh--text text #'ai-issue--prompt number))))
+                  (ai-gh--text text (apply-partially #'ai-issue--prompt agent)
+                               number))))
 
 ;;;; Claude
 
@@ -2861,7 +2917,7 @@ being read stays as it was.  Once it is waiting for input it is asked for
 it touches with air, and push the branch back.  With a prefix argument,
 edit what it is asked first; TEXT is that, from Lisp.  See
 `ai-pr--worktree' and `ai-gh--start'."
-  (interactive (ai-pr--read-args "Claude on pull request: "))
+  (interactive (ai-pr--read-args "Claude on pull request: " "claude"))
   (ai-pr--start "claude" #'claude-code--start-buffer pr text))
 
 (defun claude-issue (issue &optional text)
@@ -2870,10 +2926,11 @@ edit what it is asked first; TEXT is that, from Lisp.  See
 The worktree is ~/src/<repo>-issue<ISSUE>, on a branch cut from the
 trunk, and once Claude is waiting for input it is asked for
 `ai-issue-prompt': fix the issue, keep the branch merged with the
-trunk, have `ai-reviewer' review it, and open the pull request.  With a
+trunk, have an independent reviewer (see `ai-reviewer') review it, and
+open the pull request.  With a
 prefix argument, edit what it is asked first; TEXT is that, from Lisp.
 See `ai-issue--start'."
-  (interactive (ai-issue--read "Claude on issue: "))
+  (interactive (ai-issue--read "Claude on issue: " "claude"))
   (ai-issue--start "claude" #'claude-code--start-buffer issue text))
 
 ;;;; Antigravity
@@ -3092,14 +3149,14 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   "Start Antigravity reviewing pull request PR, in a worktree of its own.
 
 `claude-pr' for the other agent; see `ai-pr--start'."
-  (interactive (ai-pr--read-args "Antigravity on pull request: "))
+  (interactive (ai-pr--read-args "Antigravity on pull request: " "antigravity"))
   (ai-pr--start "antigravity" #'antigravity--start pr text))
 
 (defun agy-issue (issue &optional text)
   "Start Antigravity fixing ISSUE of this repository, in a worktree of its own.
 
 `claude-issue' for the other agent; see `ai-issue--start'."
-  (interactive (ai-issue--read "Antigravity on issue: "))
+  (interactive (ai-issue--read "Antigravity on issue: " "antigravity"))
   (ai-issue--start "antigravity" #'antigravity--start issue text))
 
 ;;;; agy
@@ -3239,14 +3296,14 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   "Start Copilot reviewing pull request PR of this repository, in its own worktree.
 
 `claude-pr' for the other agent; see `ai-pr--start'."
-  (interactive (ai-pr--read-args "Copilot on pull request: "))
+  (interactive (ai-pr--read-args "Copilot on pull request: " "copilot"))
   (ai-pr--start "copilot" #'copilot-cli--start pr text))
 
 (defun copilot-cli-issue (issue &optional text)
   "Start Copilot fixing ISSUE of this repository, in a worktree of its own.
 
 `claude-issue' for the other agent; see `ai-issue--start'."
-  (interactive (ai-issue--read "Copilot on issue: "))
+  (interactive (ai-issue--read "Copilot on issue: " "copilot"))
   (ai-issue--start "copilot" #'copilot-cli--start issue text))
 
 ;;;; opencode
@@ -3418,14 +3475,14 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   "Start opencode reviewing pull request PR, in a worktree of its own.
 
 `claude-pr' for the other agent; see `ai-pr--start'."
-  (interactive (ai-pr--read-args "opencode on pull request: "))
+  (interactive (ai-pr--read-args "opencode on pull request: " "opencode"))
   (ai-pr--start "opencode" #'opencode--start pr text))
 
 (defun opencode-issue (issue &optional text)
   "Start opencode fixing ISSUE of this repository, in a worktree of its own.
 
 `claude-issue' for the other agent; see `ai-issue--start'."
-  (interactive (ai-issue--read "opencode on issue: "))
+  (interactive (ai-issue--read "opencode on issue: " "opencode"))
   (ai-issue--start "opencode" #'opencode--start issue text))
 
 ;;;; kilo
@@ -3597,14 +3654,14 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   "Start kilo reviewing pull request PR of this repository, in its own worktree.
 
 `claude-pr' for the other agent; see `ai-pr--start'."
-  (interactive (ai-pr--read-args "kilo on pull request: "))
+  (interactive (ai-pr--read-args "kilo on pull request: " "kilo"))
   (ai-pr--start "kilo" #'kilo--start pr text))
 
 (defun kilo-issue (issue &optional text)
   "Start kilo fixing ISSUE of this repository, in a worktree of its own.
 
 `claude-issue' for the other agent; see `ai-issue--start'."
-  (interactive (ai-issue--read "kilo on issue: "))
+  (interactive (ai-issue--read "kilo on issue: " "kilo"))
   (ai-issue--start "kilo" #'kilo--start issue text))
 
 ;;;; kilocode
@@ -3737,14 +3794,14 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   "Start Codex reviewing pull request PR of this repository, in its own worktree.
 
 `claude-pr' for the other agent; see `ai-pr--start'."
-  (interactive (ai-pr--read-args "Codex on pull request: "))
+  (interactive (ai-pr--read-args "Codex on pull request: " "codex"))
   (ai-pr--start "codex" #'codex--start pr text))
 
 (defun codex-issue (issue &optional text)
   "Start Codex fixing ISSUE of this repository, in a worktree of its own.
 
 `claude-issue' for the other agent; see `ai-issue--start'."
-  (interactive (ai-issue--read "Codex on issue: "))
+  (interactive (ai-issue--read "Codex on issue: " "codex"))
   (ai-issue--start "codex" #'codex--start issue text))
 
 ;;;; One key for all of it

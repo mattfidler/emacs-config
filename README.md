@@ -415,9 +415,9 @@ freshly fetched `origin/main` (or whatever origin's trunk is) rather than from
 HEAD.  Once the agent's terminal has drawn its prompt and gone quiet for
 `ai-send-quiet-seconds`, it is asked for `ai-issue-prompt`: fix the issue,
 committing and pushing often and merging `origin/main` in whenever it has moved,
-then have an independent reviewer -- `ai-reviewer`, `agy` by default, through its
-code-review skill -- go over it until it comes back clean, and open the pull
-request.  `C-u` first lets you edit what it is asked.  Asking again for an issue
+then have an independent reviewer -- agy, then codex, then Claude Fable,
+whichever still has credits (see below, and `ai-reviewer`) -- go over it until
+it comes back clean, and open the pull request.  `C-u` first lets you edit what it is asked.  Asking again for an issue
 whose agent is still running re-attaches to it without asking a second time.
 
 On the shell, `claude-issue`, `agy-issue`, `copilot-issue`, `opencode-issue`,
@@ -426,6 +426,26 @@ background polls the agent's tmux pane instead, and types the request in with
 `tmux send-keys` once it has gone still.  `AI_REVIEWER`, `AI_ISSUE_PROMPT`,
 `AI_SEND_QUIET` and `AI_SEND_TIMEOUT` stand in for the Emacs variables.  The
 pull request commands work the same way, with `AI_PR_PROMPT`.
+
+Emacs and the scripts pick the reviewer the same way, through `ai-ask` (Emacs
+runs it in an interactive bash, so it sees `~/.bashrc`'s variables): `agy`, then `codex`, then Claude
+Fable (`AI_REVIEWERS` to change the order), skipping the agent doing the work
+and any reviewer that is out of credits.  Mark one out with the date its
+credits come back, set at startup (`~/.bashrc`), and it lapses by itself:
+
+```sh
+export AI_AGY_OUT_UNTIL=2026-11-01     # agy is skipped until 1 November
+export AI_CODEX_OUT_UNTIL=2026-11-05
+export AI_FABLE_OUT_UNTIL=
+```
+
+With every one out, the one back soonest is named anyway; `AI_REVIEWER` names
+one reviewer outright, as
+the `ai-reviewer` variable does in Emacs.  `ai-pr` merges in the branch the pull request actually
+targets (its base, on whichever remote has it), not just the trunk; for a pull
+request stacked on another, it asks for the whole stack to be rebased onto the
+branch the bottom of the stack targets.  `ai-issue` cuts from, and opens its
+pull request into, the trunk or `AI_ISSUE_BASE`.
 
 `agy` works as a name for antigravity throughout, since that is what the CLI is
 called.  On the shell `agy-pr`, `agy-wt` and `agy-tmux` are the same scripts as

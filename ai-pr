@@ -10,9 +10,15 @@
 # works out which one it is from the name it was called by.
 #
 # Once the agent is waiting for input it is asked to do the reviewing: read the
-# pull request, fix what it finds, format the R it touches with air, and push
-# the branch back.  AI_PR_PROMPT is that request, %p the pull request and %t
-# the trunk.
+# pull request with an independent reviewer, fix what it finds, format the R it
+# touches with air, keep it merged with the branch the pull request targets --
+# origin/main, or whatever base it was opened against, on whichever remote has
+# it -- and push the branch back.  A pull request stacked on another one (its
+# base is that one's branch) is instead kept rebased, the whole stack of them,
+# onto the branch the bottom of the stack targets: where it is all going in the
+# end, origin/main as like as not.  AI_PR_PROMPT is that request: %p the pull
+# request, %r the reviewer, %o the remote, %t the branch it targets and %m how
+# to keep up with it -- the merge, or the rebase of the stack.
 #
 # The worktree is a flat sibling of the repository even when this is run from
 # inside another worktree, and running it again for the same pull request
@@ -25,7 +31,11 @@
 # the ones there is still work to start on -- and asks which.
 #
 # Environment:
-#   AI_PR_PROMPT    what to ask instead; %p is the pull request, %t the trunk
+#   AI_PR_PROMPT    what to ask instead; %p is the pull request, %r the
+#                   reviewer, %o the remote, %t the branch it targets and %m
+#                   keeping up with it (merging it in, or rebasing the stack)
+#   AI_REVIEWERS    the reviewers to try, in order (default: agy codex fable)
+#   AI_<NAME>_OUT_UNTIL  the date that reviewer's credits come back; see ai-ask
 #   AI_SEND_QUIET   seconds of stillness that mean the agent is waiting (3)
 #   AI_SEND_TIMEOUT seconds to wait for that before giving up (120)
 #
@@ -112,8 +122,10 @@ fi
 
 cd "$worktree" || die "cannot enter $worktree"
 
-trunk=$(ai_ask_trunk "$root")
-trunk=${trunk:-main}
+# Merged into whatever the pull request targets, or for a stacked one rebased
+# onto where the stack lands in the end; see ai_ask_pr_target.
+{ IFS= read -r remote; IFS= read -r target; IFS= read -r keep_up; } \
+    < <(ai_ask_pr_target "$root" "$pr" "$tool-pr")
 
 # <agent>-tmux keeps the conversation alive across Emacs restarts and dropped
 # ssh connections; fall back to the bare agent, with no one to ask it anything,
@@ -142,10 +154,13 @@ if tmux -L "$socket" has-session -t "=$session" 2>/dev/null; then
     exec "$program"
 fi
 
-prompt=${AI_PR_PROMPT:-"Can you review pull request #%p, and fix what you find, committing and pushing to its branch often; run \`air format .' over the R you touch before each commit, and if origin/%t has moved merge it in so the branch stays ready to review.  Once nothing is left to fix, say on the pull request what you changed"}
+prompt=${AI_PR_PROMPT:-"Can you review pull request #%p with an independent reviewer (preferring %r), and fix what you find, committing and pushing to its branch often; run \`air format .' over the R you touch before each commit, and %m.  Once nothing is left to fix, say on the pull request what you changed"}
 # Quoted, or bash 5.2 reads an & in the replacement as the text it replaces.
+prompt=${prompt//%m/"$keep_up"}
 prompt=${prompt//%p/"$pr"}
-prompt=${prompt//%t/"$trunk"}
+prompt=${prompt//%r/"$(ai_ask_reviewer_text "$tool")"}
+prompt=${prompt//%o/"$remote"}
+prompt=${prompt//%t/"$target"}
 
 ai_ask_when_ready "$socket" "$session" "$prompt" "pull request #$pr" || exit
 

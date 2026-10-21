@@ -4,8 +4,10 @@
 # `claude-issue 1290' puts a branch issue-1290 of the current repository in
 # ~/src/<repo>-issue1290, cut from a freshly fetched origin trunk, runs claude
 # there, and once claude is waiting for input asks it to fix the issue: commit
-# and push often, keep the branch merged with the trunk, get a clean review from
-# an independent reviewer, and open the pull request.  `agy-issue',
+# and push often, keep the branch merged with the branch it targets, get a clean
+# review from an independent reviewer -- agy, else codex, else Claude Fable,
+# whichever has credits -- and open the pull request into that branch.  The
+# target is the trunk unless AI_ISSUE_BASE names another.  `agy-issue',
 # `copilot-issue', `opencode-issue', `kilo-issue' and `codex-issue' do the same
 # with antigravity, Copilot, opencode, kilo and Codex.  Like ai-tmux, ai-wt and ai-pr, one
 # copy serves every agent and works out which one it is from the name it was
@@ -33,9 +35,13 @@
 #        codex-issue [ISSUE] [agent args...]
 #
 # Environment:
-#   AI_REVIEWER       the independent reviewer to prefer (default: agy)
+#   AI_ISSUE_BASE     the branch the pull request targets (default: the trunk)
+#   AI_REVIEWER       the one independent reviewer to name, overriding the chain
+#   AI_REVIEWERS      the reviewers to try, in order (default: agy codex fable)
+#   AI_<NAME>_OUT_UNTIL  the date that reviewer's credits come back, as
+#                     AI_AGY_OUT_UNTIL=2026-11-01; passed over until then
 #   AI_ISSUE_PROMPT   what to ask instead; %i is the issue, %r the reviewer and
-#                     %t the trunk branch
+#                     %t the branch the pull request targets
 #   AI_SEND_QUIET     seconds of stillness that mean the agent is waiting (3)
 #   AI_SEND_TIMEOUT   seconds to wait for that before giving up (120)
 
@@ -89,7 +95,7 @@ case $issue in
     ''|*[!0-9]*) die "not an issue number: ${issue:-(none)}" ;;
 esac
 
-trunk=$(ai_ask_trunk "$root")
+trunk=$(ai_ask_issue_target "$root")
 [ -n "$trunk" ] || die "cannot tell what the trunk of $root is"
 
 branch=issue-$issue
@@ -137,10 +143,10 @@ if tmux -L "$socket" has-session -t "=$session" 2>/dev/null; then
     exec "$program"
 fi
 
-prompt=${AI_ISSUE_PROMPT:-"Can you fix issue #%i, committing and pushing often, for each commit if origin/%t has moved, merge the commit with origin/%t so it will be ready to review once the fix is complete.  Once the fix is complete, review with an independent reviewer (preferring %r with skill) until no issues remain.  Once the review is clean formatted with air, and changes are linted, open a pull request to fix the issue. Monitor every hour and fix any CI/CD issues as well as merging origin/%t as needed to keep this ready for human review and integration"}
+prompt=${AI_ISSUE_PROMPT:-"Can you fix issue #%i, committing and pushing often, for each commit if origin/%t has moved, merge the commit with origin/%t so it will be ready to review once the fix is complete.  Once the fix is complete, review with an independent reviewer (preferring %r) until no issues remain.  Once the review is clean formatted with air, and changes are linted, open a pull request into %t to fix the issue. Monitor every hour and fix any CI/CD issues as well as merging origin/%t as needed to keep this ready for human review and integration"}
 # Quoted, or bash 5.2 reads an & in the replacement as the text it replaces.
 prompt=${prompt//%i/"$issue"}
-prompt=${prompt//%r/"${AI_REVIEWER:-agy}"}
+prompt=${prompt//%r/"$(ai_ask_reviewer_text "$tool")"}
 prompt=${prompt//%t/"$trunk"}
 
 ai_ask_when_ready "$socket" "$session" "$prompt" "issue #$issue" || exit

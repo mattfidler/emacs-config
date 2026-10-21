@@ -13,7 +13,12 @@
 # since the caller ends by exec'ing the agent itself.
 #
 # Environment:
-#   AI_REVIEWER     the independent reviewer to prefer (default: agy)
+#   AI_ISSUE_BASE   the branch an issue's pull request targets (the trunk)
+#   AI_REVIEWER     the one independent reviewer to name, overriding the chain
+#   AI_REVIEWERS    the reviewers to try, in order (default: agy codex fable)
+#   AI_AGY_OUT_UNTIL, AI_CODEX_OUT_UNTIL, AI_FABLE_OUT_UNTIL
+#                   the date that reviewer's credits come back (YYYY-MM-DD, or
+#                   anything `date -d' reads); it is passed over until then
 #   AI_SEND_QUIET   seconds of stillness that mean the agent is waiting (3)
 #   AI_SEND_TIMEOUT seconds to wait for that before giving up (120)
 
@@ -50,6 +55,148 @@ ai_ask_trunk() {
         done
     fi
     printf '%s' "$trunk"
+}
+
+# The independent reviewers to name, one a line, best first: those of
+# AI_REVIEWERS -- agy, then codex, then fable -- that are not SELF, the agent
+# doing the work, and have not run out of credits.  One that has run out is
+# marked by AI_<NAME>_OUT_UNTIL, the date its credits come back, and passed over
+# until that day; set it at startup (~/.bashrc), and it lapses by itself.  With
+# every one out, the one back soonest is named anyway.  AI_REVIEWER, when set,
+# is the only one named.
+ai_ask_reviewers() {
+    local self=${1-} name var back today soonest= soonest_back=
+    local -a usable=()
+    if [ -n "${AI_REVIEWER-}" ]; then
+        printf '%s\n' "$AI_REVIEWER"
+        return 0
+    fi
+    case $self in antigravity) self=agy ;; esac
+    today=$(date +%F)
+    for name in ${AI_REVIEWERS:-agy codex fable}; do
+        [ "$name" != "$self" ] || continue
+        var=AI_$(printf '%s' "$name" | tr '[:lower:]-' '[:upper:]_')_OUT_UNTIL
+        back=${!var-}
+        if [ -n "$back" ] && ! back=$(date -d "$back" +%F 2>/dev/null); then
+            printf 'ai-ask: %s=%s is not a date; taking %s to have credits\n' \
+                   "$var" "${!var}" "$name" >&2
+            back=
+        fi
+        # ISO dates sort as strings: out while the day it comes back is ahead.
+        if [[ -z $back || ! $back > $today ]]; then
+            usable+=("$name")
+        elif [[ -z $soonest || $back < $soonest_back ]]; then
+            soonest=$name soonest_back=$back
+        fi
+    done
+    if [ ${#usable[@]} -eq 0 ] && [ -n "$soonest" ]; then
+        printf 'ai-ask: every reviewer is out of credits; naming %s, back %s\n' \
+               "$soonest" "$soonest_back" >&2
+        usable=("$soonest")
+    fi
+    [ ${#usable[@]} -eq 0 ] || printf '%s\n' "${usable[@]}"
+}
+
+# ai_ask_reviewers for SELF as words for the request: the first, and how to
+# reach it, then the rest to fall back on should it run out mid-job.
+ai_ask_reviewer_text() {
+    local name first= rest=
+    while IFS= read -r name; do
+        case $name in
+            agy)   name='agy (the antigravity-review skill)' ;;
+            codex) name='codex (`codex review`)' ;;
+            fable) name='Claude Fable (`claude -p --model fable`)' ;;
+        esac
+        if [ -z "$first" ]; then
+            first=$name
+        else
+            rest=${rest:+"$rest then "}$name
+        fi
+    done < <(ai_ask_reviewers "$@")
+    printf '%s' "${first:-a different model}"
+    [ -z "$rest" ] ||
+        printf ', falling back to %s if it is out of credits' "$rest"
+}
+
+# The remote of ROOT that is the GitHub repository OWNER/NAME -- where a pull
+# request's base branch lives -- or origin when none of them is.
+ai_ask_remote() {
+    local root=$1 repo=${2,,} remote url
+    for remote in $(git -C "$root" remote); do
+        url=$(git -C "$root" remote get-url "$remote" 2>/dev/null) || continue
+        url=${url,,}
+        url=${url%/}
+        url=${url%.git}
+        case $url in
+            *[:/]"$repo") printf '%s' "$remote"; return 0 ;;
+        esac
+    done
+    printf 'origin'
+}
+
+# How pull request PR of the repository whose main worktree is ROOT keeps up
+# with what it targets, as three lines: the remote that has its base, the base
+# branch, and the words asking for it.  That is merging the base in -- which
+# need not be the trunk, on a remote that need not be origin -- or, for a pull
+# request stacked on another one (its base is that one's branch), rebasing the
+# whole stack onto the branch the bottom of it targets: where it all lands in
+# the end, origin/main as like as not.  WHO prefixes the warnings.
+ai_ask_pr_target() {
+    local root=$1 pr=$2 who=${3:-ai-ask} target head url remote stack final
+    local below above _
+    local -a refs
+    IFS=$'\t' read -r target head url < <(cd "$root" && gh pr view "$pr" \
+        --json baseRefName,headRefName,url \
+        --jq '"\(.baseRefName)\t\(.headRefName)\t\(.url)"' 2>/dev/null)
+    if [ -z "$target" ]; then
+        target=$(ai_ask_trunk "$root")
+        target=${target:-main}
+        printf '%s: cannot tell what #%s targets; taking origin/%s\n' \
+               "$who" "$pr" "$target" >&2
+        printf 'origin\n%s\nif origin/%s has moved merge it in so the branch stays ready to review\n' \
+               "$target" "$target"
+        return 0
+    fi
+    url=${url%/pull/*}
+    remote=$(ai_ask_remote "$root" "${url#*://*/}")
+    # Walk down to the bottom of the stack, then up through whatever is stacked
+    # on this one -- a dozen deep at most, so a cycle cannot keep it going.
+    stack="#$pr ($head, this one)"
+    final=$target
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        below=$(cd "$root" && gh pr list --state open --head "$final" \
+                    --limit 1 --json number,baseRefName \
+                    --jq '.[] | "\(.number)\t\(.baseRefName)"' 2>/dev/null)
+        [ -n "$below" ] || break
+        stack="#${below%%$'\t'*} ($final) <- $stack"
+        final=${below#*$'\t'}
+    done
+    above=$head
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        above=$(cd "$root" && gh pr list --state open --base "$above" \
+                    --limit 1 --json number,headRefName \
+                    --jq '.[] | "\(.number)\t\(.headRefName)"' 2>/dev/null)
+        [ -n "$above" ] || break
+        stack="$stack <- #${above%%$'\t'*} (${above#*$'\t'})"
+        above=${above#*$'\t'}
+    done
+    refs=("$target")
+    [ "$final" = "$target" ] || refs+=("$final")
+    git -C "$root" fetch --quiet "$remote" "${refs[@]}" ||
+        printf '%s: could not fetch %s/%s\n' "$who" "$remote" "$target" >&2
+    printf '%s\n%s\n' "$remote" "$target"
+    case $stack in
+        *' <- '*)
+            printf '%s\n' "this pull request is one of a stack, $stack, which is to land in $remote/$final.  Keep the whole stack rebased onto $remote/$final rather than merging: whenever $remote/$final or any branch below moves, rebase the bottom branch onto $remote/$final and each branch above onto the one below it, and push each with --force-with-lease, so the stack stays ready to review and merge in order" ;;
+        *)
+            printf '%s\n' "if $remote/$target, the branch it targets, has moved merge it in so the branch stays ready to review" ;;
+    esac
+}
+
+# The branch an issue's fix is cut from and its pull request opened into: the
+# trunk of the repository whose main worktree is ROOT, or AI_ISSUE_BASE.
+ai_ask_issue_target() {
+    printf '%s' "${AI_ISSUE_BASE:-$(ai_ask_trunk "$1")}"
 }
 
 # The worktree already made for KIND (pr or issue) NUMBER of the repository whose
