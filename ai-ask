@@ -199,12 +199,12 @@ ai_ask_pr_target() {
         printf '%s: could not fetch %s/%s\n' "$who" "$remote" "$target" >&2
     printf '%s\n%s\n' "$remote" "$target"
     if [ -n "$merged" ]; then
-        printf '%s\n' "this pull request was stacked on $merged, already merged into $remote/$final, so drop that from the stack: rebase what is left of it, $stack, onto $remote/$final, leaving out the commits that landed there, point the bottom pull request at $final, and push each with --force-with-lease.  From then on keep the whole stack rebased onto $remote/$final rather than merging: whenever $remote/$final or any branch below moves, rebase the bottom branch onto $remote/$final and each branch above onto the one below it, pushing each with --force-with-lease, so every part shows only its own change and the stack stays ready for a human to review and merge in order"
+        printf '%s\n' "drop the parts of its stack already merged into $remote/$final, $merged: rebase what is left, $stack, onto $remote/$final, leaving out the commits that landed there, point the bottom pull request at $final, and push each with --force-with-lease.  From then on keep the whole stack rebased onto $remote/$final rather than merging: whenever $remote/$final or any branch below moves, rebase the bottom branch onto $remote/$final and each branch above onto the one below it, pushing each with --force-with-lease, so every part shows only its own change and the stack stays ready for a human to review and merge in order"
         return 0
     fi
     case $stack in
         *' <- '*)
-            printf '%s\n' "this pull request is one of a stack, $stack, which is to land in $remote/$final.  Keep the whole stack rebased onto $remote/$final rather than merging: whenever $remote/$final or any branch below moves, rebase the bottom branch onto $remote/$final and each branch above onto the one below it, and push each with --force-with-lease, so every part shows only its own change and the stack stays ready for a human to review and merge in order; when a part is merged, rebase what is left onto $remote/$final and point the next pull request at $final" ;;
+            printf '%s\n' "keep it rebased with the rest of its stack, $stack, which is to land in $remote/$final, rather than merging: whenever $remote/$final or any branch below moves, rebase the bottom branch onto $remote/$final and each branch above onto the one below it, and push each with --force-with-lease, so every part shows only its own change and the stack stays ready for a human to review and merge in order; when a part is merged, rebase what is left onto $remote/$final and point the next pull request at $final" ;;
         *)
             printf '%s\n' "if $remote/$target, the branch it targets, has moved merge it in so the branch stays ready to review" ;;
     esac
