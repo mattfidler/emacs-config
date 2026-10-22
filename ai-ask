@@ -140,10 +140,12 @@ ai_ask_remote() {
 # need not be the trunk, on a remote that need not be origin -- or, for a pull
 # request stacked on another one (its base is that one's branch), rebasing the
 # whole stack onto the branch the bottom of it targets: where it all lands in
-# the end, origin/main as like as not.  WHO prefixes the warnings.
+# the end, origin/main as like as not.  A part below that is already merged
+# is walked through to where it landed, and the agent asked to drop it from the
+# stack and retarget what was on it.  WHO prefixes the warnings.
 ai_ask_pr_target() {
     local root=$1 pr=$2 who=${3:-ai-ask} target head url remote stack final
-    local below above _
+    local below above merged= state number base trunk _
     local -a refs
     IFS=$'\t' read -r target head url < <(cd "$root" && gh pr view "$pr" \
         --json baseRefName,headRefName,url \
@@ -163,13 +165,23 @@ ai_ask_pr_target() {
     # on this one -- a dozen deep at most, so a cycle cannot keep it going.
     stack="#$pr ($head, this one)"
     final=$target
+    # Nothing below the trunk, and no fork's pull request from a branch that
+    # happens to share a name with one here.
+    trunk=$(ai_ask_trunk "$root")
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
-        below=$(cd "$root" && gh pr list --state open --head "$final" \
-                    --limit 1 --json number,baseRefName \
-                    --jq '.[] | "\(.number)\t\(.baseRefName)"' 2>/dev/null)
-        [ -n "$below" ] || break
-        stack="#${below%%$'\t'*} ($final) <- $stack"
-        final=${below#*$'\t'}
+        [ "$final" != "$trunk" ] || break
+        below=$(cd "$root" && gh pr list --state all --head "$final" \
+                    --limit 5 --json number,baseRefName,state,isCrossRepository \
+                    --jq '[.[] | select(.isCrossRepository | not)][0] // empty
+                          | "\(.state)\t\(.number)\t\(.baseRefName)"' \
+                    2>/dev/null)
+        IFS=$'\t' read -r state number base <<<"$below"
+        case $state in
+            OPEN)   stack="#$number ($final) <- $stack" ;;
+            MERGED) merged="${merged:+$merged, }#$number ($final)" ;;
+            *)      break ;;
+        esac
+        final=$base
     done
     above=$head
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
@@ -180,14 +192,19 @@ ai_ask_pr_target() {
         stack="$stack <- #${above%%$'\t'*} (${above#*$'\t'})"
         above=${above#*$'\t'}
     done
-    refs=("$target")
-    [ "$final" = "$target" ] || refs+=("$final")
+    # The branch of a part already merged may be gone.
+    refs=("$final")
+    [ "$final" = "$target" ] || [ -n "$merged" ] || refs+=("$target")
     git -C "$root" fetch --quiet "$remote" "${refs[@]}" ||
         printf '%s: could not fetch %s/%s\n' "$who" "$remote" "$target" >&2
     printf '%s\n%s\n' "$remote" "$target"
+    if [ -n "$merged" ]; then
+        printf '%s\n' "this pull request was stacked on $merged, already merged into $remote/$final, so drop that from the stack: rebase what is left of it, $stack, onto $remote/$final, leaving out the commits that landed there, point the bottom pull request at $final, and push each with --force-with-lease.  From then on keep the whole stack rebased onto $remote/$final rather than merging: whenever $remote/$final or any branch below moves, rebase the bottom branch onto $remote/$final and each branch above onto the one below it, pushing each with --force-with-lease, so every part shows only its own change and the stack stays ready for a human to review and merge in order"
+        return 0
+    fi
     case $stack in
         *' <- '*)
-            printf '%s\n' "this pull request is one of a stack, $stack, which is to land in $remote/$final.  Keep the whole stack rebased onto $remote/$final rather than merging: whenever $remote/$final or any branch below moves, rebase the bottom branch onto $remote/$final and each branch above onto the one below it, and push each with --force-with-lease, so the stack stays ready to review and merge in order" ;;
+            printf '%s\n' "this pull request is one of a stack, $stack, which is to land in $remote/$final.  Keep the whole stack rebased onto $remote/$final rather than merging: whenever $remote/$final or any branch below moves, rebase the bottom branch onto $remote/$final and each branch above onto the one below it, and push each with --force-with-lease, so every part shows only its own change and the stack stays ready for a human to review and merge in order; when a part is merged, rebase what is left onto $remote/$final and point the next pull request at $final" ;;
         *)
             printf '%s\n' "if $remote/$target, the branch it targets, has moved merge it in so the branch stays ready to review" ;;
     esac
