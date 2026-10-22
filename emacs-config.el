@@ -2539,8 +2539,8 @@ reviewer's credits come back are set.  What it warns about is echoed."
           "linted, open the pull requests: the first part into %t, and each next "
           "part into the part before it.  Monitor them every hour, fixing any "
           "CI/CD failures and keeping up with origin/%t the same way; when a "
-          "part is merged, rebase what is left of the stack onto origin/%t and "
-          "point the next part's pull request at %t, so the rest stays ready for "
+          "part is merged, rebase what is left of the stack onto origin/%t, "
+          "leaving out the commits that landed there, and point the next part's pull request at %t, so the rest stays ready for "
           "human review and integration")
   "What an agent started on an issue is asked to do.
 
