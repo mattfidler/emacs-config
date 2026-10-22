@@ -2523,14 +2523,25 @@ reviewer's credits come back are set.  What it warns about is echoed."
     (string-join (ai-ask--call "ai_ask_reviewer_text" agent) " ")))
 
 (defcustom ai-issue-prompt
-  (concat "Can you fix issue #%i, committing and pushing often, for each "
-          "commit if origin/%t has moved, merge the commit with origin/%t "
-          "so it will be ready to review once the fix is complete.  Once the "
-          "fix is complete, review with an independent reviewer (preferring "
-          "%r) until no issues remain.  Once the review is clean "
-          "formatted with air, and changes are linted, open a pull request "
-          "into %t to fix the issue. Monitor every hour and fix any CI/CD issues as well as "
-          "merging origin/%t as needed to keep this ready for human review and integration")
+  (concat "Can you fix issue #%i, as a stack of pull requests when it is more "
+          "than one unit change, so each part is small enough for a human to "
+          "review and to maintain on its own: the first part stays in this "
+          "worktree, and each next part gets a worktree of its own beside this "
+          "one, named as this one with -part2, -part3 and so on added, on a "
+          "branch issue-%i-part2, issue-%i-part3 and so on cut from the part "
+          "before it.  Commit and push often.  Whenever origin/%t moves, keep up "
+          "with it: a single branch by merging origin/%t into it, a stack by "
+          "rebasing the entire stack onto origin/%t, each part onto the one "
+          "before it, and pushing with --force-with-lease, so every part shows "
+          "only its own change.  Once the fix is complete, review it with an "
+          "independent reviewer (preferring %r) until no issues remain.  Once "
+          "the review is clean, the R is formatted with air and the changes are "
+          "linted, open the pull requests: the first part into %t, and each next "
+          "part into the part before it.  Monitor them every hour, fixing any "
+          "CI/CD failures and keeping up with origin/%t the same way; when a "
+          "part is merged, rebase what is left of the stack onto origin/%t and "
+          "point the next part's pull request at %t, so the rest stays ready for "
+          "human review and integration")
   "What an agent started on an issue is asked to do.
 
 %i is replaced by the issue number, %r by the reviewer -- see
