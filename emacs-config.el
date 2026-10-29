@@ -2477,13 +2477,14 @@ already living there."
   "The one agent to name as independent reviewer, or nil for the chain.
 
 nil, the default, leaves the choice to ai-ask, the same as on the shell:
-agy, then codex, then Claude Fable (AI_REVIEWERS to change the order),
-less the agent doing the work and any reviewer whose credits have run
-out.  One that has run out is marked by AI_AGY_OUT_UNTIL,
-AI_CODEX_OUT_UNTIL or AI_FABLE_OUT_UNTIL in ~/.bashrc: the date its
+agy, then codex, then kilo, then Claude Fable (AI_REVIEWERS to change
+the order), less the agent doing the work and any reviewer whose credits
+have run out.  One that has run out is marked by AI_AGY_OUT_UNTIL,
+AI_CODEX_OUT_UNTIL, AI_KILO_OUT_UNTIL or AI_FABLE_OUT_UNTIL in ~/.bashrc:
+the date its
 credits come back.  A string here is passed on as AI_REVIEWER and named
 outright."
-  :type '(choice (const :tag "agy, codex, then Fable, by credits" nil)
+  :type '(choice (const :tag "agy, codex, kilo, then Fable, by credits" nil)
                  string)
   :group 'tools)
 
@@ -2534,7 +2535,11 @@ reviewer's credits come back are set.  What it warns about is echoed."
           "rebasing the entire stack onto origin/%t, each part onto the one "
           "before it, and pushing with --force-with-lease, so every part shows "
           "only its own change.  Once the fix is complete, review it with an "
-          "independent reviewer (preferring %r) until no issues remain.  Once "
+          "independent reviewer (preferring %r) until no issues remain; "
+          "before fixing a finding, look through the open pull requests "
+          "(`gh pr list') for one that already fixes it, and leave any that "
+          "does to that pull request rather than fixing it again here, naming "
+          "it in this one's description.  Once "
           "the review is clean, the R is formatted with air and the changes are "
           "linted, open the pull requests: the first part into %t, and each next "
           "part into the part before it.  Monitor them every hour, fixing any "
@@ -2555,8 +2560,12 @@ AI_ISSUE_BASE names another."
   (concat "Can you review pull request #%p with an independent reviewer "
           "(preferring %r), and fix what you find, committing and pushing "
           "to its branch often; run `air format .' over the R you touch "
-          "before each commit, and %m.  Once nothing is left to fix, say on "
-          "the pull request what you changed")
+          "before each commit, and %m.  Before fixing a finding, look "
+          "through the other open pull requests (`gh pr list') for one that "
+          "already fixes it, and leave any that does to that pull request "
+          "rather than fixing it again here.  Once nothing is left to fix, "
+          "say on the pull request what you changed, and which findings you "
+          "left to which other pull request")
   "What an agent started on a pull request is asked to do.
 
 %p is replaced by the pull request number, %r by the reviewer -- see

@@ -15,8 +15,8 @@
 # Environment:
 #   AI_ISSUE_BASE   the branch an issue's pull request targets (the trunk)
 #   AI_REVIEWER     the one independent reviewer to name, overriding the chain
-#   AI_REVIEWERS    the reviewers to try, in order (default: agy codex fable)
-#   AI_AGY_OUT_UNTIL, AI_CODEX_OUT_UNTIL, AI_FABLE_OUT_UNTIL
+#   AI_REVIEWERS    the reviewers to try, in order (default: agy codex kilo fable)
+#   AI_AGY_OUT_UNTIL, AI_CODEX_OUT_UNTIL, AI_KILO_OUT_UNTIL, AI_FABLE_OUT_UNTIL
 #                   the date that reviewer's credits come back (YYYY-MM-DD, or
 #                   anything `date -d' reads); it is passed over until then
 #   AI_SEND_QUIET   seconds of stillness that mean the agent is waiting (3)
@@ -58,7 +58,7 @@ ai_ask_trunk() {
 }
 
 # The independent reviewers to name, one a line, best first: those of
-# AI_REVIEWERS -- agy, then codex, then fable -- that are not SELF, the agent
+# AI_REVIEWERS -- agy, then codex, then kilo, then fable -- that are not SELF, the agent
 # doing the work, and have not run out of credits.  One that has run out is
 # marked by AI_<NAME>_OUT_UNTIL, the date its credits come back, and passed over
 # until that day; set it at startup (~/.bashrc), and it lapses by itself.  With
@@ -71,9 +71,9 @@ ai_ask_reviewers() {
         printf '%s\n' "$AI_REVIEWER"
         return 0
     fi
-    case $self in antigravity) self=agy ;; esac
+    case $self in antigravity) self=agy ;; kilocode) self=kilo ;; esac
     today=$(date +%F)
-    for name in ${AI_REVIEWERS:-agy codex fable}; do
+    for name in ${AI_REVIEWERS:-agy codex kilo fable}; do
         [ "$name" != "$self" ] || continue
         var=AI_$(printf '%s' "$name" | tr '[:lower:]-' '[:upper:]_')_OUT_UNTIL
         back=${!var-}
@@ -105,6 +105,7 @@ ai_ask_reviewer_text() {
         case $name in
             agy)   name='agy (the antigravity-review skill)' ;;
             codex) name='codex (`codex review`)' ;;
+            kilo)  name='kilo (the kilo-code-review skill)' ;;
             fable) name='Claude Fable (`claude -p --model fable`)' ;;
         esac
         if [ -z "$first" ]; then

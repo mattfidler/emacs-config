@@ -34,7 +34,7 @@
 #   AI_PR_PROMPT    what to ask instead; %p is the pull request, %r the
 #                   reviewer, %o the remote, %t the branch it targets and %m
 #                   keeping up with it (merging it in, or rebasing the stack)
-#   AI_REVIEWERS    the reviewers to try, in order (default: agy codex fable)
+#   AI_REVIEWERS    the reviewers to try, in order (default: agy codex kilo fable)
 #   AI_<NAME>_OUT_UNTIL  the date that reviewer's credits come back; see ai-ask
 #   AI_SEND_QUIET   seconds of stillness that mean the agent is waiting (3)
 #   AI_SEND_TIMEOUT seconds to wait for that before giving up (120)
@@ -154,7 +154,7 @@ if tmux -L "$socket" has-session -t "=$session" 2>/dev/null; then
     exec "$program"
 fi
 
-prompt=${AI_PR_PROMPT:-"Can you review pull request #%p with an independent reviewer (preferring %r), and fix what you find, committing and pushing to its branch often; run \`air format .' over the R you touch before each commit, and %m.  Once nothing is left to fix, say on the pull request what you changed"}
+prompt=${AI_PR_PROMPT:-"Can you review pull request #%p with an independent reviewer (preferring %r), and fix what you find, committing and pushing to its branch often; run \`air format .' over the R you touch before each commit, and %m.  Before fixing a finding, look through the other open pull requests (\`gh pr list') for one that already fixes it, and leave any that does to that pull request rather than fixing it again here.  Once nothing is left to fix, say on the pull request what you changed, and which findings you left to which other pull request"}
 # Quoted, or bash 5.2 reads an & in the replacement as the text it replaces.
 prompt=${prompt//%m/"$keep_up"}
 prompt=${prompt//%p/"$pr"}

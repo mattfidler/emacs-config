@@ -395,9 +395,10 @@ left out of the list, since an agent is living in those: typing the number in
 anyway re-enters it, which re-attaches to the conversation already there.
 
 Once the agent is waiting for input it is asked for `ai-pr-prompt`: review the
-pull request, fix what it finds, run `air format .` over the R it touches before
-each commit, merge the trunk in whenever it moves, and say on the pull request
-what it changed.  `C-u` first lets you edit what it is asked, and an agent
+pull request, fix what it finds -- except what another open pull request already
+fixes, which it leaves to that one -- run `air format .` over the R it touches
+before each commit, merge the trunk in whenever it moves, and say on the pull
+request what it changed and what it left to which other pull request.  `C-u` first lets you edit what it is asked, and an agent
 already at work in that worktree is left alone rather than asked again.
 
 ### Issues
@@ -415,9 +416,10 @@ freshly fetched `origin/main` (or whatever origin's trunk is) rather than from
 HEAD.  Once the agent's terminal has drawn its prompt and gone quiet for
 `ai-send-quiet-seconds`, it is asked for `ai-issue-prompt`: fix the issue,
 committing and pushing often and merging `origin/main` in whenever it has moved,
-then have an independent reviewer -- agy, then codex, then Claude Fable,
+then have an independent reviewer -- agy, then codex, then kilo, then Claude Fable,
 whichever still has credits (see below, and `ai-reviewer`) -- go over it until
-it comes back clean, and open the pull request.  `C-u` first lets you edit what it is asked.  Asking again for an issue
+it comes back clean, leaving any finding another open pull request already fixes
+to that one, and open the pull request.  `C-u` first lets you edit what it is asked.  Asking again for an issue
 whose agent is still running re-attaches to it without asking a second time.
 
 On the shell, `claude-issue`, `agy-issue`, `copilot-issue`, `opencode-issue`,
@@ -428,14 +430,15 @@ background polls the agent's tmux pane instead, and types the request in with
 pull request commands work the same way, with `AI_PR_PROMPT`.
 
 Emacs and the scripts pick the reviewer the same way, through `ai-ask` (Emacs
-runs it in an interactive bash, so it sees `~/.bashrc`'s variables): `agy`, then `codex`, then Claude
-Fable (`AI_REVIEWERS` to change the order), skipping the agent doing the work
+runs it in an interactive bash, so it sees `~/.bashrc`'s variables): `agy`, then `codex`, then `kilo`, then
+Claude Fable (`AI_REVIEWERS` to change the order), skipping the agent doing the work
 and any reviewer that is out of credits.  Mark one out with the date its
 credits come back, set at startup (`~/.bashrc`), and it lapses by itself:
 
 ```sh
 export AI_AGY_OUT_UNTIL=2026-11-01     # agy is skipped until 1 November
 export AI_CODEX_OUT_UNTIL=2026-11-05
+export AI_KILO_OUT_UNTIL=
 export AI_FABLE_OUT_UNTIL=
 ```
 
