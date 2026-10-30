@@ -27,6 +27,10 @@
 # than asking it anything a second time.  A worktree whose session has since
 # ended starts an agent, and asks it again.
 #
+# Before starting, the agent is asked to look for anyone else already reviewing
+# it, and to say on the pull request that it is starting a review, so it is
+# clear who is.
+#
 # With no argument it lists the open pull requests that have no worktree yet --
 # the ones there is still work to start on -- and asks which.
 #
@@ -154,7 +158,7 @@ if tmux -L "$socket" has-session -t "=$session" 2>/dev/null; then
     exec "$program"
 fi
 
-prompt=${AI_PR_PROMPT:-"Can you review pull request #%p with an independent reviewer (preferring %r), and fix what you find, committing and pushing to its branch often; run \`air format .' over the R you touch before each commit, and %m.  Before fixing a finding, look through the other open pull requests (\`gh pr list') for one that already fixes it, and leave any that does to that pull request rather than fixing it again here.  Once nothing is left to fix, say on the pull request what you changed, and which findings you left to which other pull request"}
+prompt=${AI_PR_PROMPT:-"Can you review pull request #%p with an independent reviewer (preferring %r), and fix what you find, committing and pushing to its branch often; run \`air format .' over the R you touch before each commit, and %m.  Before starting, look through the pull request's comments for someone else saying they are already reviewing it; if anyone is, stop and tell me who rather than starting.  Otherwise comment on the pull request that you are starting a review of it, so it is clear who is reviewing it.  Before fixing a finding, look through the other open pull requests (\`gh pr list') for one that already fixes it, and leave any that does to that pull request rather than fixing it again here.  Once nothing is left to fix, say on the pull request what you changed, and which findings you left to which other pull request"}
 # Quoted, or bash 5.2 reads an & in the replacement as the text it replaces.
 prompt=${prompt//%m/"$keep_up"}
 prompt=${prompt//%p/"$pr"}

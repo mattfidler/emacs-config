@@ -394,8 +394,10 @@ even when asked for from inside another worktree.  Pull requests that already ha
 left out of the list, since an agent is living in those: typing the number in
 anyway re-enters it, which re-attaches to the conversation already there.
 
-Once the agent is waiting for input it is asked for `ai-pr-prompt`: review the
-pull request, fix what it finds -- except what another open pull request already
+Once the agent is waiting for input it is asked for `ai-pr-prompt`: check no one
+else has said on the pull request that they are reviewing it, stopping if
+someone has, and otherwise say there that it is starting a review, so it is
+clear who is reviewing it; then review the pull request, fix what it finds -- except what another open pull request already
 fixes, which it leaves to that one -- run `air format .` over the R it touches
 before each commit, merge the trunk in whenever it moves, and say on the pull
 request what it changed and what it left to which other pull request.  `C-u` first lets you edit what it is asked, and an agent
