@@ -257,40 +257,65 @@ ai_ask_unstarted() {
     done
 }
 
+# A comment that says its author is at work on what it is on: "I'm working on
+# this", "I'll take this", "/claim" and the like.  Matched without regard to case.
+ai_ask_claim="\b(i'?m|i am|i'?ll|i will|i'?ve|i have|we'?re|we are)\b[^.
+]{0,40}\b(working on|work on|taking|take this|picking|pick this|looking into|look into|starting|started|on it|fix(ing)? (this|it))|^\s*/?(claim|assign me|take)\b"
+
+# The branches named as ai-issue names them, issue-<N> or issue-<N>-part<K>, on
+# the remotes of the repository whose main worktree is ROOT that are someone
+# else's, one remote/branch a line.  One is the user's own when there is a
+# branch of that name here, or its last commit is by user.email: an agent of
+# theirs pushed it, from here or from another machine.  One whose commit has not
+# been fetched cannot be told apart, so counts as someone else's.
+ai_ask_others_branches() {
+    local root=$1 email remote sha ref name author
+    email=$(git -C "$root" config user.email)
+    for remote in $(git -C "$root" remote); do
+        while read -r sha ref; do
+            name=${ref#refs/heads/}
+            git -C "$root" show-ref --verify --quiet "refs/heads/$name" &&
+                continue
+            author=$(git -C "$root" log -1 --format=%ae "$sha" 2>/dev/null)
+            [ -n "$author" ] && [ "$author" = "$email" ] && continue
+            printf '%s/%s\n' "$remote" "$name"
+        done < <(git -C "$root" ls-remote --heads "$remote" 'issue-*' 2>/dev/null)
+    done
+}
+
 # Who else is already at work on the open issues of the repository whose main
 # worktree is ROOT -- or just issue NUMBER -- as TSV lines "number<TAB>who and
-# how", one for each sign of it: a branch on a remote named as ai-issue names
-# them, issue-<N> or issue-<N>-part<K>; an open pull request that links to the
+# how", one for each sign of it: someone else's branch on a remote named as
+# ai-issue names them (see ai_ask_others_branches); an open pull request that links to the
 # issue, by closing it or by a #N in its title or body; an assignee; or a
 # comment saying they are on it.  Anything of the gh user's own is left out,
 # and so is an issue assigned to them: that one is theirs to carry on with.
 # Prints nothing it cannot find out, rather than fail.
 ai_ask_issue_claims() {
-    local root=$1 number=${2-} me issues prs remote branches=
+    local root=$1 number=${2-} me remote
     command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || {
         printf 'ai-ask: gh or jq is missing; not checking who works on what\n' >&2
         return 0
     }
     me=$(cd "$root" && gh api user --jq .login 2>/dev/null)
-    if [ -n "$number" ]; then
-        issues=$(cd "$root" && gh issue view "$number" \
-                     --json number,assignees,comments 2>/dev/null) &&
-            issues="[$issues]"
-    else
-        issues=$(cd "$root" && gh issue list --limit 50 \
-                     --json number,assignees,comments 2>/dev/null)
-    fi
-    prs=$(cd "$root" && gh pr list --state open --limit 100 \
-              --json number,author,title,body,headRefName,closingIssuesReferences \
-              2>/dev/null)
-    for remote in $(git -C "$root" remote); do
-        branches+=$(git -C "$root" ls-remote --heads "$remote" 'issue-*' \
-                        2>/dev/null | sed "s|.*refs/heads/|$remote/|")$'\n'
-    done
-    jq -rn --arg me "$me" --arg branches "$branches" \
-       --argjson issues "${issues:-[]}" --argjson prs "${prs:-[]}" '
+    # Read from files, not handed over as arguments: a busy repository's pull
+    # requests, bodies and all, run past the 128K a single argument can be.
+    jq -rn --arg me "$me" --arg claim "$ai_ask_claim" \
+       --slurpfile issues <(cd "$root" &&
+                            if [ -n "$number" ]; then
+                                gh issue view "$number" \
+                                   --json number,assignees,comments --jq '[.]'
+                            else
+                                gh issue list --limit 50 \
+                                   --json number,assignees,comments
+                            fi 2>/dev/null) \
+       --slurpfile prs <(cd "$root" && gh pr list --state open --limit 100 \
+                             --json number,author,title,body,headRefName,closingIssuesReferences \
+                             2>/dev/null) \
+       --rawfile branches <(ai_ask_others_branches "$root") '
         ($branches | split("\n") | map(select(length > 0))) as $branches
-        | $issues[]
+        | ($prs[0] // []) as $prs
+        | ($issues[0] // [])[]
         | select([.assignees[].login] | index($me) | not)
         | .number as $n
         | ( ( $branches[]
@@ -305,9 +330,30 @@ ai_ask_issue_claims() {
             ( .assignees[] | "\(.login): assigned" ),
             ( .comments[]
               | select(.author.login != $me)
-              | select(.body | test("\\b(i\u0027?m|i am|i\u0027?ll|i will|i\u0027?ve|i have|we\u0027?re|we are)\\b[^.\n]{0,40}\\b(working on|work on|taking|take this|picking|pick this|looking into|look into|starting|started|on it|fix(ing)? (this|it))|^\\s*/?(claim|assign me|take)\\b"; "i"))
+              | select(.body | test($claim; "i"))
               | "\(.author.login): said so on \(.createdAt[:10])" ) )
-        | "\($n)\t\(.)"' 2>/dev/null
+        | "\($n)\t\(.)"' 2>/dev/null ||
+        printf 'ai-ask: could not check who works on what; listing it all\n' >&2
+    return 0
+}
+
+# Whether issue NUMBER of the repository whose main worktree is ROOT has been
+# claimed by the gh user -- assigned to them, or a comment of theirs saying they
+# are on it -- as yes or no.  yes when it cannot tell, so nothing is asked twice
+# for want of gh.
+ai_ask_issue_mine() {
+    local root=$1 number=$2 me= mine=
+    command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 &&
+        me=$(cd "$root" && gh api user --jq .login 2>/dev/null)
+    [ -z "$me" ] ||
+        mine=$( (cd "$root" &&
+                     gh issue view "$number" --json assignees,comments 2>/dev/null) |
+                    jq -r --arg me "$me" --arg claim "$ai_ask_claim" '
+                        if ([.assignees[].login] | index($me))
+                           or any(.comments[]; .author.login == $me
+                                               and (.body | test($claim; "i")))
+                        then "yes" else "no" end' 2>/dev/null)
+    printf '%s\n' "${mine:-yes}"
 }
 
 # Wait for the agent in SESSION on SOCKET to settle, then type PROMPT in --

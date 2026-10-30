@@ -21,7 +21,9 @@
 # agent that never settles.
 #
 # Running it again for the same issue re-enters the worktree and re-attaches to
-# the agent already working there, leaving it to get on with it.  A worktree
+# the agent already working there, leaving it to get on with it -- once it has
+# claimed the issue: an agent on one not yet assigned to you, nor said on it
+# that you are working on it, is asked to claim it first.  A worktree
 # whose session has since ended starts an agent, and asks it again.  Agent args
 # only reach an agent that is starting, so they are ignored then.
 #
@@ -47,6 +49,8 @@
 #                     AI_AGY_OUT_UNTIL=2026-11-01; passed over until then
 #   AI_ISSUE_PROMPT   what to ask instead; %i is the issue, %r the reviewer and
 #                     %t the branch the pull request targets
+#   AI_ISSUE_CLAIM_PROMPT  what to ask an agent already at work on an issue not
+#                     yet claimed instead; %i is the issue
 #   AI_SEND_QUIET     seconds of stillness that mean the agent is waiting (3)
 #   AI_SEND_TIMEOUT   seconds to wait for that before giving up (120)
 
@@ -167,9 +171,20 @@ socket=$tool
 prefix=$(printf '%s' "$tool" | tr '[:lower:]-' '[:upper:]_')
 export "${prefix}_TMUX_SESSION=$session"
 
+# An agent already at work is left to get on with it -- unless the issue is not
+# claimed yet, as one started before claiming was asked for has not: then it is
+# asked to do just that.
 if tmux -L "$socket" has-session -t "=$session" 2>/dev/null; then
-    printf '%s is already working in %s; nothing sent\n' "$tool" "$worktree" >&2
     [ $# -eq 0 ] || printf '%s-issue: agent args ignored\n' "$tool" >&2
+    if [ "$(ai_ask_issue_mine "$root" "$issue")" = no ]; then
+        claim=${AI_ISSUE_CLAIM_PROMPT:-"Before going on, claim issue #%i, so it is clear who is working on it: assign yourself (\`gh issue edit %i --add-assignee @me') if you can, and comment on the issue that you are working on it"}
+        claim=${claim//%i/"$issue"}
+        printf '%s is already working in %s; asking it to claim #%s\n' \
+               "$tool" "$worktree" "$issue" >&2
+        ai_ask_when_ready "$socket" "$session" "$claim" "claiming #$issue" || exit
+    else
+        printf '%s is already working in %s; nothing sent\n' "$tool" "$worktree" >&2
+    fi
     exec "$program"
 fi
 

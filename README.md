@@ -429,7 +429,10 @@ then have an independent reviewer -- agy, then codex, then kilo, then Claude Fab
 whichever still has credits (see below, and `ai-reviewer`) -- go over it until
 it comes back clean, leaving any finding another open pull request already fixes
 to that one, and open the pull request.  `C-u` first lets you edit what it is asked.  Asking again for an issue
-whose agent is still running re-attaches to it without asking a second time.
+whose agent is still running re-attaches to it without asking a second time --
+unless the issue is not claimed yet (neither assigned to you nor said on to be
+yours), as for one started before claiming was asked for: then it is asked only
+for `ai-issue-claim-prompt`, to claim it.
 
 On the shell, `claude-issue`, `agy-issue`, `copilot-issue`, `opencode-issue`,
 `kilo-issue` and `codex-issue` do the same.  With no terminal to type into, a watcher left in the

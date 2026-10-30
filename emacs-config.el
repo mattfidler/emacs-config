@@ -2690,6 +2690,26 @@ interactive spec, as `ai-gh--read-args' does the work of."
                `((?i . ,number) (?r . ,(ai-ask--reviewer agent))
                  (?t . ,(ai-issue--target (ai-pr--root))))))
 
+(defcustom ai-issue-claim-prompt
+  (concat "Before going on, claim issue #%i, so it is clear who is working on "
+          "it: assign yourself (`gh issue edit %i --add-assignee @me') if you "
+          "can, and comment on the issue that you are working on it")
+  "What an agent already at work on an issue not yet claimed is asked.
+
+That is one started before `ai-issue-prompt' asked it to claim the
+issue, re-attached to on an issue neither assigned to you nor said on
+to be yours.  %i is replaced by the issue number."
+  :type 'string
+  :group 'tools)
+
+(defun ai-issue--claim (number)
+  "`ai-issue-claim-prompt' for issue NUMBER, or nil once it is claimed.
+See ai-ask's ai_ask_issue_mine."
+  (and (equal (ai-ask--call "ai_ask_issue_mine"
+                            (directory-file-name (ai-pr--root)) number)
+              '("no"))
+       (format-spec ai-issue-claim-prompt `((?i . ,number)))))
+
 (defun ai-issue--worktree (issue)
   "Return a worktree of this repository for fixing ISSUE, making it if needed.
 
@@ -2774,19 +2794,28 @@ the number already filled in.  CATEGORY and WHAT are `ai-gh--read' and
                (read-string "Ask the agent: "
                             (funcall default (ai-gh--number what number)))))))
 
-(defun ai-gh--start (agent start worktree text)
+(defun ai-gh--start (agent start worktree text &optional again)
   "Start AGENT in WORKTREE and ask it for TEXT once it is waiting.
 
 START is called with the worktree and returns the agent's eat buffer.
 AGENT names its tmux server, which is how an agent already at work there
 is found: that conversation is re-entered and left to get on with it,
-rather than asked to start the job over."
+rather than asked to start the job over.  AGAIN, when given, is called
+then with no arguments, and what it returns, unless nil, is asked of it
+instead."
   (let* ((running (ai-tmux--session-for-directory agent worktree))
+         (more (and running again (funcall again)))
          (buffer (funcall start worktree)))
-    (if running
-        (message "%s is already working in %s; nothing sent"
-                 (capitalize agent) (abbreviate-file-name worktree))
-      (ai-send--when-ready buffer text))
+    (cond
+     (more
+      (message "%s is already working in %s; asking it only: %s"
+               (capitalize agent) (abbreviate-file-name worktree) more)
+      (ai-send--when-ready buffer more))
+     (running
+      (message "%s is already working in %s; nothing sent"
+               (capitalize agent) (abbreviate-file-name worktree)))
+     (t
+      (ai-send--when-ready buffer text)))
     (pop-to-buffer buffer)))
 
 (defun ai-gh--text (text default number)
@@ -2800,7 +2829,9 @@ An edit cleared to nothing means the default, not a bare return."
   "Set AGENT to work on fixing ISSUE, in a worktree of its own.
 
 It is asked for TEXT, or `ai-issue-prompt' when that is nil, once it is
-waiting for input.  See `ai-gh--start'."
+waiting for input.  An agent already at work there is asked only for
+`ai-issue-claim-prompt', and only when the issue is not claimed yet.
+See `ai-gh--start'."
   (let ((number (ai-gh--number "an issue" issue)))
     ;; Before starting anew, make sure no one else already has: a second fix
     ;; of the same issue is wasted on both.
@@ -2813,7 +2844,8 @@ waiting for input.  See `ai-gh--start'."
           (user-error "Leaving #%s to them" number))))
     (ai-gh--start agent start (ai-issue--worktree number)
                   (ai-gh--text text (apply-partially #'ai-issue--prompt agent)
-                               number))))
+                               number)
+                  (apply-partially #'ai-issue--claim number))))
 
 ;;;; Claude
 
