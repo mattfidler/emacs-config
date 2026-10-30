@@ -409,13 +409,20 @@ already at work in that worktree is left alone rather than asked again.
 pushed, they cut one for an issue and hand the agent the whole job.  Asking
 completes over the repository's open issues the way the pull request commands
 complete over pull requests, and takes a number, a `#number` or a URL.  Issues
-that already have a worktree are left out, the same way.
+that already have a worktree are left out, the same way, and so are issues
+someone else is already at work on: one with a branch named the way these
+commands name them (`issue-<N>`, `issue-<N>-part<K>`) on a remote, an open pull
+request linking to it, someone else assigned, or a comment from someone else
+saying they are on it.  Asking for one of those anyway says who has it and
+checks you want to start on it all the same.
 
 The worktree is `~/src/<repo>-issue<N>` on a branch `issue-<N>`, cut from a
 freshly fetched `origin/main` (or whatever origin's trunk is) rather than from
 HEAD.  Once the agent's terminal has drawn its prompt and gone quiet for
-`ai-send-quiet-seconds`, it is asked for `ai-issue-prompt`: fix the issue,
-committing and pushing often and merging `origin/main` in whenever it has moved,
+`ai-send-quiet-seconds`, it is asked for `ai-issue-prompt`: check no one else
+is working on the issue, stopping if anyone is, and claim it -- assigning itself
+and commenting that it is starting on it, so it is clear who has it -- then fix
+the issue, committing and pushing often and merging `origin/main` in whenever it has moved,
 then have an independent reviewer -- agy, then codex, then kilo, then Claude Fable,
 whichever still has credits (see below, and `ai-reviewer`) -- go over it until
 it comes back clean, leaving any finding another open pull request already fixes

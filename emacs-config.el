@@ -2524,7 +2524,17 @@ reviewer's credits come back are set.  What it warns about is echoed."
     (string-join (ai-ask--call "ai_ask_reviewer_text" agent) " ")))
 
 (defcustom ai-issue-prompt
-  (concat "Can you fix issue #%i, as a stack of pull requests when it is more "
+  (concat "Can you fix issue #%i.  Before starting, check that no one else is "
+          "already working on it: a branch issue-%i or issue-%i-part<N> on any "
+          "remote (`git ls-remote --heads'), an open pull request that links to "
+          "it (`gh pr list --search %i'), someone else assigned to it, or a "
+          "comment on it from someone else saying they are working on it.  A "
+          "claim that is already yours, from an earlier session, is not someone "
+          "else's: carry on with it.  If anyone else is on it, stop and tell me "
+          "who and where rather than starting.  Otherwise claim it first, so it "
+          "is clear who is working on it: assign yourself (`gh issue edit %i "
+          "--add-assignee @me') if you can, and comment on the issue that you "
+          "are starting work on it.  Fix it as a stack of pull requests when it is more "
           "than one unit change, so each part is small enough for a human to "
           "review and to maintain on its own: the first part stays in this "
           "worktree, and each next part gets a worktree of its own beside this "
@@ -2633,14 +2643,36 @@ waiting for input.  See `ai-gh--start'."
                       "2>/dev/null"))
              "\n" t))))
 
+(defun ai-issue--claims (&optional number)
+  "Who else is at work on this repository's open issues, or just on NUMBER.
+
+A list of (NUMBER . WHO-AND-HOW), one for each sign of it that ai-ask's
+ai_ask_issue_claims finds: a branch issue-<N> or issue-<N>-part<K> on a
+remote, an open pull request linking to the issue, an assignee, or a
+comment saying they are on it -- anyone's but the gh user's own."
+  (mapcar (lambda (line)
+            (let ((fields (split-string line "\t")))
+              (cons (car fields) (string-join (cdr fields) "\t"))))
+          (apply #'ai-ask--call "ai_ask_issue_claims"
+                 (directory-file-name (ai-pr--root))
+                 (and number (list number)))))
+
 (defun ai-issue--read (prompt agent)
   "Read one of this repository's open issues with PROMPT, and what to ask AGENT.
 
-The ones that already have a worktree are left out; see
-`ai-gh--unstarted'.  Returns a list (ISSUE TEXT) for an interactive
-spec, as `ai-gh--read-args' does the work of."
-  (ai-gh--read-args prompt (ai-gh--unstarted (ai-issue--open) "issue")
-                    'ai-issue "an issue" (apply-partially #'ai-issue--prompt agent)))
+The ones that already have a worktree are left out, see
+`ai-gh--unstarted', and so are the ones someone else is already at work
+on, see `ai-issue--claims'.  Returns a list (ISSUE TEXT) for an
+interactive spec, as `ai-gh--read-args' does the work of."
+  (let ((claims (ai-issue--claims)))
+    (when claims
+      (message "Left out, already being worked on: %s"
+               (mapconcat (lambda (claim) (format "#%s (%s)" (car claim) (cdr claim)))
+                          claims ", ")))
+    (ai-gh--read-args prompt
+                      (seq-remove (lambda (item) (assoc (car item) claims))
+                                  (ai-gh--unstarted (ai-issue--open) "issue"))
+                      'ai-issue "an issue" (apply-partially #'ai-issue--prompt agent))))
 
 (defun ai-issue--target (root)
   "The branch an issue's fix in ROOT is cut from and its pull request goes into."
@@ -2765,6 +2797,15 @@ An edit cleared to nothing means the default, not a bare return."
 It is asked for TEXT, or `ai-issue-prompt' when that is nil, once it is
 waiting for input.  See `ai-gh--start'."
   (let ((number (ai-gh--number "an issue" issue)))
+    ;; Before starting anew, make sure no one else already has: a second fix
+    ;; of the same issue is wasted on both.
+    (unless (file-exists-p (ai-gh--worktree-name "issue" number))
+      (let ((claims (ai-issue--claims number)))
+        (when (and claims
+                   (not (yes-or-no-p
+                         (format "#%s is already being worked on: %s.  Start on it anyway? "
+                                 number (mapconcat #'cdr claims "; ")))))
+          (user-error "Leaving #%s to them" number))))
     (ai-gh--start agent start (ai-issue--worktree number)
                   (ai-gh--text text (apply-partially #'ai-issue--prompt agent)
                                number))))

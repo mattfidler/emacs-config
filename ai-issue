@@ -3,7 +3,8 @@
 #
 # `claude-issue 1290' puts a branch issue-1290 of the current repository in
 # ~/src/<repo>-issue1290, cut from a freshly fetched origin trunk, runs claude
-# there, and once claude is waiting for input asks it to fix the issue: commit
+# there, and once claude is waiting for input asks it to fix the issue: check
+# no one else is on it and claim it on the issue, so it is clear who is, commit
 # and push often, keep the branch merged with the branch it targets, get a clean
 # review from an independent reviewer -- agy, else codex, else Claude Fable,
 # whichever has credits -- and open the pull request into that branch.  The
@@ -24,8 +25,12 @@
 # whose session has since ended starts an agent, and asks it again.  Agent args
 # only reach an agent that is starting, so they are ignored then.
 #
-# With no argument it lists the open issues that have no worktree yet -- the
-# ones there is still work to start on -- and asks which.
+# With no argument it lists the open issues that have no worktree yet, and that
+# no one else is at work on -- the ones there is still work to start on -- and
+# asks which.  Someone else is on an issue when a remote has a branch issue-<N>
+# or issue-<N>-part<K>, an open pull request links to it, someone else is
+# assigned, or someone else has said so on it; asking for one of those anyway
+# says who, and checks before starting.
 #
 # Usage: claude-issue [ISSUE] [agent args...]
 #        agy-issue [ISSUE] [agent args...]
@@ -76,10 +81,18 @@ if [ $# -gt 0 ]; then
 else
     command -v gh >/dev/null 2>&1 ||
         die "gh is not installed; give the issue number instead"
+    # Less the ones someone else is already at work on, and the ones already
+    # in a worktree: an agent is living in those.
+    claims=$(ai_ask_issue_claims "$root")
+    if [ -n "$claims" ]; then
+        printf 'Left out, already being worked on:\n' >&2
+        printf '%s\n' "$claims" | sed 's/^/  #/' >&2
+    fi
     printf 'Open issues:\n' >&2
-    # Less the ones already in a worktree: an agent is living in those.
     gh issue list --limit 50 --json number,title,author \
        --jq '.[] | "\(.number)\t\(.title)\t\(.author.login)"' 2>/dev/null |
+        grep -v -E "^($(printf '%s\n' "$claims" | cut -f1 | sort -u |
+                        paste -sd'|' -))"$'\t' |
         ai_ask_unstarted "$root" issue >&2 || true
     # Prefer /dev/tty over stdin: this may be started from a pipe.
     [ -t 0 ] || { exec </dev/tty; } 2>/dev/null
@@ -100,6 +113,23 @@ trunk=$(ai_ask_issue_target "$root")
 
 branch=issue-$issue
 worktree="$(dirname -- "$root")/$(basename -- "$root")-issue$issue"
+
+# Before starting anew, make sure no one else already has: a second fix of the
+# same issue is wasted on both.
+if [ ! -e "$worktree" ]; then
+    claims=$(ai_ask_issue_claims "$root" "$issue")
+    if [ -n "$claims" ]; then
+        printf '#%s is already being worked on:\n' "$issue" >&2
+        printf '%s\n' "$claims" | cut -f2- | sed 's/^/  /' >&2
+        { [ -t 0 ] || exec </dev/tty; } 2>/dev/null ||
+            die "leaving #$issue to them"
+        read -r -p "Start on it anyway? [y/N] " answer || answer=
+        case $answer in
+            [yY]*) ;;
+            *) die "leaving #$issue to them" ;;
+        esac
+    fi
+fi
 
 if [ -e "$worktree" ]; then
     [ -d "$worktree" ] || die "$worktree exists and is not a directory"
@@ -143,7 +173,7 @@ if tmux -L "$socket" has-session -t "=$session" 2>/dev/null; then
     exec "$program"
 fi
 
-prompt=${AI_ISSUE_PROMPT:-"Can you fix issue #%i, as a stack of pull requests when it is more than one unit change, so each part is small enough for a human to review and to maintain on its own: the first part stays in this worktree, and each next part gets a worktree of its own beside this one, named as this one with -part2, -part3 and so on added, on a branch issue-%i-part2, issue-%i-part3 and so on cut from the part before it.  Commit and push often.  Whenever origin/%t moves, keep up with it: a single branch by merging origin/%t into it, a stack by rebasing the entire stack onto origin/%t, each part onto the one before it, and pushing with --force-with-lease, so every part shows only its own change.  Once the fix is complete, review it with an independent reviewer (preferring %r) until no issues remain; before fixing a finding, look through the open pull requests (\`gh pr list') for one that already fixes it, and leave any that does to that pull request rather than fixing it again here, naming it in this one's description.  Once the review is clean, the R is formatted with air and the changes are linted, open the pull requests: the first part into %t, and each next part into the part before it.  Monitor them every hour, fixing any CI/CD failures and keeping up with origin/%t the same way; when a part is merged, rebase what is left of the stack onto origin/%t, leaving out the commits that landed there, and point the next part's pull request at %t, so the rest stays ready for human review and integration"}
+prompt=${AI_ISSUE_PROMPT:-"Can you fix issue #%i.  Before starting, check that no one else is already working on it: a branch issue-%i or issue-%i-part<N> on any remote (\`git ls-remote --heads'), an open pull request that links to it (\`gh pr list --search %i'), someone else assigned to it, or a comment on it from someone else saying they are working on it.  A claim that is already yours, from an earlier session, is not someone else's: carry on with it.  If anyone else is on it, stop and tell me who and where rather than starting.  Otherwise claim it first, so it is clear who is working on it: assign yourself (\`gh issue edit %i --add-assignee @me') if you can, and comment on the issue that you are starting work on it.  Fix it as a stack of pull requests when it is more than one unit change, so each part is small enough for a human to review and to maintain on its own: the first part stays in this worktree, and each next part gets a worktree of its own beside this one, named as this one with -part2, -part3 and so on added, on a branch issue-%i-part2, issue-%i-part3 and so on cut from the part before it.  Commit and push often.  Whenever origin/%t moves, keep up with it: a single branch by merging origin/%t into it, a stack by rebasing the entire stack onto origin/%t, each part onto the one before it, and pushing with --force-with-lease, so every part shows only its own change.  Once the fix is complete, review it with an independent reviewer (preferring %r) until no issues remain; before fixing a finding, look through the open pull requests (\`gh pr list') for one that already fixes it, and leave any that does to that pull request rather than fixing it again here, naming it in this one's description.  Once the review is clean, the R is formatted with air and the changes are linted, open the pull requests: the first part into %t, and each next part into the part before it.  Monitor them every hour, fixing any CI/CD failures and keeping up with origin/%t the same way; when a part is merged, rebase what is left of the stack onto origin/%t, leaving out the commits that landed there, and point the next part's pull request at %t, so the rest stays ready for human review and integration"}
 # Quoted, or bash 5.2 reads an & in the replacement as the text it replaces.
 prompt=${prompt//%i/"$issue"}
 prompt=${prompt//%r/"$(ai_ask_reviewer_text "$tool")"}

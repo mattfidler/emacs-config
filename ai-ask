@@ -257,6 +257,59 @@ ai_ask_unstarted() {
     done
 }
 
+# Who else is already at work on the open issues of the repository whose main
+# worktree is ROOT -- or just issue NUMBER -- as TSV lines "number<TAB>who and
+# how", one for each sign of it: a branch on a remote named as ai-issue names
+# them, issue-<N> or issue-<N>-part<K>; an open pull request that links to the
+# issue, by closing it or by a #N in its title or body; an assignee; or a
+# comment saying they are on it.  Anything of the gh user's own is left out,
+# and so is an issue assigned to them: that one is theirs to carry on with.
+# Prints nothing it cannot find out, rather than fail.
+ai_ask_issue_claims() {
+    local root=$1 number=${2-} me issues prs remote branches=
+    command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || {
+        printf 'ai-ask: gh or jq is missing; not checking who works on what\n' >&2
+        return 0
+    }
+    me=$(cd "$root" && gh api user --jq .login 2>/dev/null)
+    if [ -n "$number" ]; then
+        issues=$(cd "$root" && gh issue view "$number" \
+                     --json number,assignees,comments 2>/dev/null) &&
+            issues="[$issues]"
+    else
+        issues=$(cd "$root" && gh issue list --limit 50 \
+                     --json number,assignees,comments 2>/dev/null)
+    fi
+    prs=$(cd "$root" && gh pr list --state open --limit 100 \
+              --json number,author,title,body,headRefName,closingIssuesReferences \
+              2>/dev/null)
+    for remote in $(git -C "$root" remote); do
+        branches+=$(git -C "$root" ls-remote --heads "$remote" 'issue-*' \
+                        2>/dev/null | sed "s|.*refs/heads/|$remote/|")$'\n'
+    done
+    jq -rn --arg me "$me" --arg branches "$branches" \
+       --argjson issues "${issues:-[]}" --argjson prs "${prs:-[]}" '
+        ($branches | split("\n") | map(select(length > 0))) as $branches
+        | $issues[]
+        | select([.assignees[].login] | index($me) | not)
+        | .number as $n
+        | ( ( $branches[]
+              | select(test("/issue-\($n)(-part[0-9]+)?$"))
+              | "branch \(.)" ),
+            ( $prs[]
+              | select(.author.login != $me)
+              | select(([.closingIssuesReferences[]?.number] | index($n))
+                       or ("\(.title)\n\(.body)"
+                           | test("#\($n)(?![0-9])")))
+              | "\(.author.login): pull request #\(.number) (\(.headRefName))" ),
+            ( .assignees[] | "\(.login): assigned" ),
+            ( .comments[]
+              | select(.author.login != $me)
+              | select(.body | test("\\b(i\u0027?m|i am|i\u0027?ll|i will|i\u0027?ve|i have|we\u0027?re|we are)\\b[^.\n]{0,40}\\b(working on|work on|taking|take this|picking|pick this|looking into|look into|starting|started|on it|fix(ing)? (this|it))|^\\s*/?(claim|assign me|take)\\b"; "i"))
+              | "\(.author.login): said so on \(.createdAt[:10])" ) )
+        | "\($n)\t\(.)"' 2>/dev/null
+}
+
 # Wait for the agent in SESSION on SOCKET to settle, then type PROMPT in --
 # and the return that submits it a moment later, so an agent that reads a burst
 # of input as a paste does not take the return for a newline in it.  Detached
