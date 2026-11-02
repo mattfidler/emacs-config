@@ -25,14 +25,19 @@
 # re-enters it -- which, since the agents run under tmux, re-attaches to the
 # conversation already living there, and leaves it to get on with it rather
 # than asking it anything a second time.  A worktree whose session has since
-# ended starts an agent, and asks it again.
+# ended starts an agent, and asks it again.  A claude that has had a
+# conversation there before picks it back up instead (--continue), and is asked
+# to settle any question or problem it left open before posting anything more,
+# then carry on with the review.
 #
 # Before starting, the agent is asked to look for anyone else already reviewing
 # it, and to say on the pull request that it is starting a review, so it is
 # clear who is.
 #
-# With no argument it lists the open pull requests that have no worktree yet --
-# the ones there is still work to start on -- and asks which.
+# With no argument it lists the open pull requests you have not reviewed or
+# commented on yet, and that no agent is at work on -- the ones there is still
+# work to start on -- and asks which.  A worktree left behind with no agent in
+# it does not hide one.
 #
 # Environment:
 #   AI_PR_PROMPT    what to ask instead; %p is the pull request, %r the
@@ -40,6 +45,7 @@
 #                   keeping up with it (merging it in, or rebasing the stack)
 #   AI_REVIEWERS    the reviewers to try, in order (default: agy codex kilo fable)
 #   AI_<NAME>_OUT_UNTIL  the date that reviewer's credits come back; see ai-ask
+#   AI_RESUME_PROMPT  what a claude picking up a conversation is asked instead
 #   AI_SEND_QUIET   seconds of stillness that mean the agent is waiting (3)
 #   AI_SEND_TIMEOUT seconds to wait for that before giving up (120)
 #
@@ -83,10 +89,12 @@ if [ $# -gt 0 ]; then
     shift
 else
     printf 'Open pull requests:\n' >&2
-    # Less the ones already in a worktree: an agent is living in those.
-    gh pr list --limit 50 --json number,title,author \
+    # Less the ones you have already reviewed, and the ones an agent is at work
+    # on: see ai_ask_pr_done.
+    done_prs=$(ai_ask_pr_done "$root" | sort -u | paste -sd'|' -)
+    gh pr list --limit 200 --json number,title,author \
        --jq '.[] | "\(.number)\t\(.title)\t\(.author.login)"' 2>/dev/null |
-        ai_ask_unstarted "$root" pr >&2 || true
+        grep -v -E "^(${done_prs})"$'\t' >&2 || true
     # Prefer /dev/tty over stdin: this may be started from a pipe.
     [ -t 0 ] || { exec </dev/tty; } 2>/dev/null
     read -r -p "Pull request: " pr || die "no pull request given"
@@ -158,13 +166,23 @@ if tmux -L "$socket" has-session -t "=$session" 2>/dev/null; then
     exec "$program"
 fi
 
-prompt=${AI_PR_PROMPT:-"Can you review pull request #%p with an independent reviewer (preferring %r), and fix what you find, committing and pushing to its branch often; run \`air format .' over the R you touch before each commit, and %m.  Before starting, look through the pull request's comments for someone else saying they are already reviewing it; if anyone is, stop and tell me who rather than starting.  Otherwise comment on the pull request that you are starting a review of it, so it is clear who is reviewing it.  Before fixing a finding, look through the other open pull requests (\`gh pr list') for one that already fixes it, and leave any that does to that pull request rather than fixing it again here.  Once nothing is left to fix, say on the pull request what you changed, and which findings you left to which other pull request"}
-# Quoted, or bash 5.2 reads an & in the replacement as the text it replaces.
-prompt=${prompt//%m/"$keep_up"}
-prompt=${prompt//%p/"$pr"}
-prompt=${prompt//%r/"$(ai_ask_reviewer_text "$tool")"}
-prompt=${prompt//%o/"$remote"}
-prompt=${prompt//%t/"$target"}
+# A claude that has worked here before, and was left part way -- perhaps on a
+# question it asked, or a problem it raised -- picks that conversation back up
+# and settles it first, rather than starting the review over.
+if [ "$tool" = claude ] && [ "$(ai_ask_claude_history "$worktree")" = yes ]; then
+    set -- --continue "$@"
+    prompt=${AI_RESUME_PROMPT:-"This conversation was left off part way.  Before posting anything more to GitHub, look back over it for questions you asked me and problems you raised that were never answered or settled: settle the ones you can, and ask me again about the rest and wait for my answer.  Then carry on with the job you were given, from where you left off rather than starting over"}
+    printf '%s-pr: continuing the conversation already had in %s\n' \
+           "$tool" "$worktree" >&2
+else
+    prompt=${AI_PR_PROMPT:-"Can you review pull request #%p with an independent reviewer (preferring %r), and fix what you find, committing and pushing to its branch often; run \`air format .' over the R you touch before each commit, and %m.  Before starting, look through the pull request's comments for someone else saying they are already reviewing it; if anyone is, stop and tell me who rather than starting.  Otherwise comment on the pull request that you are starting a review of it, so it is clear who is reviewing it.  Before fixing a finding, look through the other open pull requests (\`gh pr list') for one that already fixes it, and leave any that does to that pull request rather than fixing it again here.  Once nothing is left to fix, say on the pull request what you changed, and which findings you left to which other pull request"}
+    # Quoted, or bash 5.2 reads an & in the replacement as the text it replaces.
+    prompt=${prompt//%m/"$keep_up"}
+    prompt=${prompt//%p/"$pr"}
+    prompt=${prompt//%r/"$(ai_ask_reviewer_text "$tool")"}
+    prompt=${prompt//%o/"$remote"}
+    prompt=${prompt//%t/"$target"}
+fi
 
 ai_ask_when_ready "$socket" "$session" "$prompt" "pull request #$pr" || exit
 

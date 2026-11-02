@@ -2319,7 +2319,7 @@ siblings in ~/src even when this is asked for from inside another one."
     (mapcar (lambda (line) (split-string line "\t"))
             (split-string
              (shell-command-to-string
-              (concat "gh pr list --limit 50 "
+              (concat "gh pr list --limit 200 "
                       "--json number,author,title "
                       "--jq '.[] | \"\\(.number)\\t\\(.author.login)\\t\\(.title)\"' "
                       "2>/dev/null"))
@@ -2620,11 +2620,18 @@ then stop: the agent's prompt, sitting there with the cursor in it."
 (defun ai-pr--read-args (prompt agent)
   "Read one of this repository's open pull requests, and what to ask AGENT.
 
-The ones already checked out into a worktree are left out.  Returns a
-list (PR TEXT) for an interactive spec; see `ai-gh--read-args'."
-  (ai-gh--read-args prompt (ai-gh--unstarted (ai-pr--open) "pr")
-                    'ai-pull-request "a pull request"
-                    (apply-partially #'ai-pr--prompt agent)))
+The ones you have already reviewed or commented on are left out, and so
+are the ones an agent is at work on in a worktree of their own; a
+worktree left behind with no agent in it does not hide one.  See ai-ask's
+ai_ask_pr_done.  Returns a list (PR TEXT) for an interactive spec; see
+`ai-gh--read-args'."
+  (let ((done (ai-ask--call "ai_ask_pr_done"
+                            (directory-file-name (ai-pr--root)))))
+    (ai-gh--read-args prompt
+                      (seq-remove (lambda (item) (member (car item) done))
+                                  (ai-pr--open))
+                      'ai-pull-request "a pull request"
+                      (apply-partially #'ai-pr--prompt agent))))
 
 (defun ai-pr--start (agent start pr &optional text)
   "Set AGENT to work on reviewing PR, in a worktree of its own.
@@ -2642,7 +2649,7 @@ waiting for input.  See `ai-gh--start'."
     (mapcar (lambda (line) (split-string line "\t"))
             (split-string
              (shell-command-to-string
-              (concat "gh issue list --limit 50 "
+              (concat "gh issue list --limit 200 "
                       "--json number,author,title "
                       "--jq '.[] | \"\\(.number)\\t\\(.author.login)\\t\\(.title)\"' "
                       "2>/dev/null"))
@@ -2794,6 +2801,23 @@ the number already filled in.  CATEGORY and WHAT are `ai-gh--read' and
                (read-string "Ask the agent: "
                             (funcall default (ai-gh--number what number)))))))
 
+(defcustom ai-resume-prompt
+  (concat "This conversation was left off part way.  Before posting anything "
+          "more to GitHub, look back over it for questions you asked me and "
+          "problems you raised that were never answered or settled: settle "
+          "the ones you can, and ask me again about the rest and wait for my "
+          "answer.  Then carry on with the job you were given, from where you "
+          "left off rather than starting over")
+  "What Claude is asked on picking up a conversation it had in a worktree.
+
+That is a claude no longer running in a pull request's or an issue's
+worktree that has had a conversation there before: rather than start
+the job over, `ai-gh--start' continues that one (`claude --continue'),
+in case it was left on a question or a problem to settle first.  The
+shell's ai-pr and ai-issue do the same, with AI_RESUME_PROMPT."
+  :type 'string
+  :group 'tools)
+
 (defun ai-gh--start (agent start worktree text &optional again)
   "Start AGENT in WORKTREE and ask it for TEXT once it is waiting.
 
@@ -2802,11 +2826,28 @@ AGENT names its tmux server, which is how an agent already at work there
 is found: that conversation is re-entered and left to get on with it,
 rather than asked to start the job over.  AGAIN, when given, is called
 then with no arguments, and what it returns, unless nil, is asked of it
-instead."
+instead.
+
+A claude that is not running there, but has had a conversation there
+before, picks that one back up: START is called with the switches
+\(\"--continue\"), and it is asked for `ai-resume-prompt' -- and for what
+AGAIN returns, if anything -- rather than TEXT."
   (let* ((running (ai-tmux--session-for-directory agent worktree))
-         (more (and running again (funcall again)))
-         (buffer (funcall start worktree)))
+         (resume (and (not running) (equal agent "claude")
+                      (equal (ai-ask--call "ai_ask_claude_history"
+                                           (directory-file-name worktree))
+                             '("yes"))))
+         (more (and (or running resume) again (funcall again)))
+         (buffer (if resume
+                     (funcall start worktree '("--continue"))
+                   (funcall start worktree))))
     (cond
+     (resume
+      (message "Claude is continuing the conversation already had in %s"
+               (abbreviate-file-name worktree))
+      (ai-send--when-ready buffer (if more
+                                      (concat ai-resume-prompt ".  " more)
+                                    ai-resume-prompt)))
      (more
       (message "%s is already working in %s; asking it only: %s"
                (capitalize agent) (abbreviate-file-name worktree) more)
@@ -2992,15 +3033,16 @@ See `ai-wt--worktree' for how the worktree and its branch are chosen."
   (interactive (list (read-string "Worktree/branch name: ")))
   (claude-code--start-in (ai-wt--worktree name)))
 
-(defun claude-code--start-buffer (directory)
+(defun claude-code--start-buffer (directory &optional switches)
   "Start Claude in DIRECTORY and return the buffer it came up in.
 
 `claude-code--start-in' shows the buffer but does not hand it back, and
 `ai-gh--start' needs one to type into: take whichever buffer for
-DIRECTORY was not there before."
+DIRECTORY was not there before.  SWITCHES are claude's, such as
+\"--continue\"; see `claude-code--start-in'."
   (require 'claude-code)
   (let ((before (claude-code--find-claude-buffers-for-directory directory)))
-    (claude-code--start-in directory)
+    (claude-code--start-in directory nil switches)
     (let ((after (claude-code--find-claude-buffers-for-directory directory)))
       (or (car (cl-set-difference after before)) (car after)
           (error "No Claude buffer came up in %s" directory)))))

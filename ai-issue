@@ -24,7 +24,10 @@
 # the agent already working there, leaving it to get on with it -- once it has
 # claimed the issue: an agent on one not yet assigned to you, nor said on it
 # that you are working on it, is asked to claim it first.  A worktree
-# whose session has since ended starts an agent, and asks it again.  Agent args
+# whose session has since ended starts an agent, and asks it again.  A claude that has had a
+# conversation there before picks it back up instead (--continue), and is asked
+# to settle any question or problem it left open before posting anything more,
+# then carry on with the fix.  Agent args
 # only reach an agent that is starting, so they are ignored then.
 #
 # With no argument it lists the open issues that have no worktree yet, and that
@@ -51,6 +54,7 @@
 #                     %t the branch the pull request targets
 #   AI_ISSUE_CLAIM_PROMPT  what to ask an agent already at work on an issue not
 #                     yet claimed instead; %i is the issue
+#   AI_RESUME_PROMPT  what a claude picking up a conversation is asked instead
 #   AI_SEND_QUIET     seconds of stillness that mean the agent is waiting (3)
 #   AI_SEND_TIMEOUT   seconds to wait for that before giving up (120)
 
@@ -93,7 +97,7 @@ else
         printf '%s\n' "$claims" | sed 's/^/  #/' >&2
     fi
     printf 'Open issues:\n' >&2
-    gh issue list --limit 50 --json number,title,author \
+    gh issue list --limit 200 --json number,title,author \
        --jq '.[] | "\(.number)\t\(.title)\t\(.author.login)"' 2>/dev/null |
         grep -v -E "^($(printf '%s\n' "$claims" | cut -f1 | sort -u |
                         paste -sd'|' -))"$'\t' |
@@ -171,14 +175,17 @@ socket=$tool
 prefix=$(printf '%s' "$tool" | tr '[:lower:]-' '[:upper:]_')
 export "${prefix}_TMUX_SESSION=$session"
 
+# What to ask an agent that is going on with work already begun on an issue not
+# yet claimed.
+claim=${AI_ISSUE_CLAIM_PROMPT:-"Before going on, claim issue #%i, so it is clear who is working on it: assign yourself (\`gh issue edit %i --add-assignee @me') if you can, and comment on the issue that you are working on it"}
+claim=${claim//%i/"$issue"}
+
 # An agent already at work is left to get on with it -- unless the issue is not
 # claimed yet, as one started before claiming was asked for has not: then it is
 # asked to do just that.
 if tmux -L "$socket" has-session -t "=$session" 2>/dev/null; then
     [ $# -eq 0 ] || printf '%s-issue: agent args ignored\n' "$tool" >&2
     if [ "$(ai_ask_issue_mine "$root" "$issue")" = no ]; then
-        claim=${AI_ISSUE_CLAIM_PROMPT:-"Before going on, claim issue #%i, so it is clear who is working on it: assign yourself (\`gh issue edit %i --add-assignee @me') if you can, and comment on the issue that you are working on it"}
-        claim=${claim//%i/"$issue"}
         printf '%s is already working in %s; asking it to claim #%s\n' \
                "$tool" "$worktree" "$issue" >&2
         ai_ask_when_ready "$socket" "$session" "$claim" "claiming #$issue" || exit
@@ -188,11 +195,24 @@ if tmux -L "$socket" has-session -t "=$session" 2>/dev/null; then
     exec "$program"
 fi
 
-prompt=${AI_ISSUE_PROMPT:-"Can you fix issue #%i.  Before starting, check that no one else is already working on it: a branch issue-%i or issue-%i-part<N> on any remote (\`git ls-remote --heads'), an open pull request that links to it (\`gh pr list --search %i'), someone else assigned to it, or a comment on it from someone else saying they are working on it.  A claim that is already yours, from an earlier session, is not someone else's: carry on with it.  If anyone else is on it, stop and tell me who and where rather than starting.  Otherwise claim it first, so it is clear who is working on it: assign yourself (\`gh issue edit %i --add-assignee @me') if you can, and comment on the issue that you are starting work on it.  Fix it as a stack of pull requests when it is more than one unit change, so each part is small enough for a human to review and to maintain on its own: the first part stays in this worktree, and each next part gets a worktree of its own beside this one, named as this one with -part2, -part3 and so on added, on a branch issue-%i-part2, issue-%i-part3 and so on cut from the part before it.  Commit and push often.  Whenever origin/%t moves, keep up with it: a single branch by merging origin/%t into it, a stack by rebasing the entire stack onto origin/%t, each part onto the one before it, and pushing with --force-with-lease, so every part shows only its own change.  Once the fix is complete, review it with an independent reviewer (preferring %r) until no issues remain; before fixing a finding, look through the open pull requests (\`gh pr list') for one that already fixes it, and leave any that does to that pull request rather than fixing it again here, naming it in this one's description.  Once the review is clean, the R is formatted with air and the changes are linted, open the pull requests: the first part into %t, and each next part into the part before it.  Monitor them every hour, fixing any CI/CD failures and keeping up with origin/%t the same way; when a part is merged, rebase what is left of the stack onto origin/%t, leaving out the commits that landed there, and point the next part's pull request at %t, so the rest stays ready for human review and integration"}
-# Quoted, or bash 5.2 reads an & in the replacement as the text it replaces.
-prompt=${prompt//%i/"$issue"}
-prompt=${prompt//%r/"$(ai_ask_reviewer_text "$tool")"}
-prompt=${prompt//%t/"$trunk"}
+# A claude that has worked here before, and was left part way -- perhaps on a
+# question it asked, or a problem it raised -- picks that conversation back up
+# and settles it first, rather than starting the fix over; and claims the issue,
+# should it not have yet.
+if [ "$tool" = claude ] && [ "$(ai_ask_claude_history "$worktree")" = yes ]; then
+    set -- --continue "$@"
+    prompt=${AI_RESUME_PROMPT:-"This conversation was left off part way.  Before posting anything more to GitHub, look back over it for questions you asked me and problems you raised that were never answered or settled: settle the ones you can, and ask me again about the rest and wait for my answer.  Then carry on with the job you were given, from where you left off rather than starting over"}
+    [ "$(ai_ask_issue_mine "$root" "$issue")" = yes ] ||
+        prompt="$prompt.  $claim"
+    printf '%s-issue: continuing the conversation already had in %s\n' \
+           "$tool" "$worktree" >&2
+else
+    prompt=${AI_ISSUE_PROMPT:-"Can you fix issue #%i.  Before starting, check that no one else is already working on it: a branch issue-%i or issue-%i-part<N> on any remote (\`git ls-remote --heads'), an open pull request that links to it (\`gh pr list --search %i'), someone else assigned to it, or a comment on it from someone else saying they are working on it.  A claim that is already yours, from an earlier session, is not someone else's: carry on with it.  If anyone else is on it, stop and tell me who and where rather than starting.  Otherwise claim it first, so it is clear who is working on it: assign yourself (\`gh issue edit %i --add-assignee @me') if you can, and comment on the issue that you are starting work on it.  Fix it as a stack of pull requests when it is more than one unit change, so each part is small enough for a human to review and to maintain on its own: the first part stays in this worktree, and each next part gets a worktree of its own beside this one, named as this one with -part2, -part3 and so on added, on a branch issue-%i-part2, issue-%i-part3 and so on cut from the part before it.  Commit and push often.  Whenever origin/%t moves, keep up with it: a single branch by merging origin/%t into it, a stack by rebasing the entire stack onto origin/%t, each part onto the one before it, and pushing with --force-with-lease, so every part shows only its own change.  Once the fix is complete, review it with an independent reviewer (preferring %r) until no issues remain; before fixing a finding, look through the open pull requests (\`gh pr list') for one that already fixes it, and leave any that does to that pull request rather than fixing it again here, naming it in this one's description.  Once the review is clean, the R is formatted with air and the changes are linted, open the pull requests: the first part into %t, and each next part into the part before it.  Monitor them every hour, fixing any CI/CD failures and keeping up with origin/%t the same way; when a part is merged, rebase what is left of the stack onto origin/%t, leaving out the commits that landed there, and point the next part's pull request at %t, so the rest stays ready for human review and integration"}
+    # Quoted, or bash 5.2 reads an & in the replacement as the text it replaces.
+    prompt=${prompt//%i/"$issue"}
+    prompt=${prompt//%r/"$(ai_ask_reviewer_text "$tool")"}
+    prompt=${prompt//%t/"$trunk"}
+fi
 
 ai_ask_when_ready "$socket" "$session" "$prompt" "issue #$issue" || exit
 

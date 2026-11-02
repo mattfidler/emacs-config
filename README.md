@@ -403,6 +403,14 @@ before each commit, merge the trunk in whenever it moves, and say on the pull
 request what it changed and what it left to which other pull request.  `C-u` first lets you edit what it is asked, and an agent
 already at work in that worktree is left alone rather than asked again.
 
+A Claude no longer running in a pull request's or an issue's worktree, but that
+has had a conversation there before, is not started over: that conversation is
+picked back up (`claude --continue`) and it is asked for `ai-resume-prompt`
+(`AI_RESUME_PROMPT` on the shell) -- to look back for questions it asked and
+problems it raised that were never settled, and settle them, asking you again
+about any still waiting on you, before posting anything more to GitHub -- then
+carry on where it left off.
+
 ### Issues
 
 `C-c a n` (`claude-issue`), `C-c a N` (`agy-issue`), `C-c a o n`

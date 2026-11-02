@@ -306,7 +306,7 @@ ai_ask_issue_claims() {
                                 gh issue view "$number" \
                                    --json number,assignees,comments --jq '[.]'
                             else
-                                gh issue list --limit 50 \
+                                gh issue list --limit 200 \
                                    --json number,assignees,comments
                             fi 2>/dev/null) \
        --slurpfile prs <(cd "$root" && gh pr list --state open --limit 100 \
@@ -354,6 +354,55 @@ ai_ask_issue_mine() {
                                                and (.body | test($claim; "i")))
                         then "yes" else "no" end' 2>/dev/null)
     printf '%s\n' "${mine:-yes}"
+}
+
+# Whether claude has had a conversation in DIR before, as yes or no: whether
+# its project directory for DIR -- the path with everything but letters and
+# digits turned into dashes -- holds a transcript, for \`claude --continue' to
+# pick back up.
+ai_ask_claude_history() {
+    local dir project
+    dir=$(cd "$1" 2>/dev/null && pwd -P) || dir=$1
+    project=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/${dir//[!A-Za-z0-9]/-}
+    if compgen -G "$project/*.jsonl" >/dev/null; then
+        printf 'yes\n'
+    else
+        printf 'no\n'
+    fi
+}
+
+# Whether an agent is at work in DIR: whether any agent's tmux server has the
+# session ai-tmux gives that directory.
+ai_ask_agent_running() {
+    local session agent
+    session=$(ai_ask_session "$1")
+    for agent in claude antigravity copilot opencode kilo codex; do
+        tmux -L "$agent" has-session -t "=$session" 2>/dev/null && return 0
+    done
+    return 1
+}
+
+# The open pull requests of the repository whose main worktree is ROOT that
+# there is no review to start on, one number a line: the ones the gh user has
+# already reviewed or commented on, and the ones an agent is at work on in a
+# worktree of their own.  A worktree with no agent in it, and no review of
+# theirs on the pull request, is not reason enough: one was left behind.
+ai_ask_pr_done() {
+    local root=$1 me number dir worktrees
+    me=$(cd "$root" && gh api user --jq .login 2>/dev/null)
+    [ -z "$me" ] ||
+        (cd "$root" && gh pr list --state open --limit 200 \
+             --json number,reviews,comments \
+             --jq ".[] | select(any(.reviews[], .comments[];
+                                    .author.login == \"$me\")) | .number" \
+             2>/dev/null)
+    worktrees=$(git -C "$root" worktree list --porcelain)
+    while IFS= read -r number; do
+        dir=$(ai_ask_existing "$root" pr "$number" "$worktrees") &&
+            ai_ask_agent_running "$dir" && printf '%s\n' "$number"
+    done < <(cd "$root" && gh pr list --state open --limit 200 \
+                 --json number --jq '.[].number' 2>/dev/null)
+    return 0
 }
 
 # Wait for the agent in SESSION on SOCKET to settle, then type PROMPT in --
