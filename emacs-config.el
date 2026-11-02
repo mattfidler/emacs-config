@@ -2579,7 +2579,8 @@ AI_ISSUE_BASE names another."
           "through the other open pull requests (`gh pr list') for one that "
           "already fixes it, and leave any that does to that pull request "
           "rather than fixing it again here.  Once nothing is left to fix, "
-          "say on the pull request what you changed, and which findings you "
+          "submit a review of the pull request (`gh pr review %p --comment') "
+          "saying what you changed, and which findings you "
           "left to which other pull request")
   "What an agent started on a pull request is asked to do.
 
@@ -2620,9 +2621,10 @@ then stop: the agent's prompt, sitting there with the cursor in it."
 (defun ai-pr--read-args (prompt agent)
   "Read one of this repository's open pull requests, and what to ask AGENT.
 
-The ones you have already reviewed or commented on are left out, and so
-are the ones an agent is at work on in a worktree of their own; a
-worktree left behind with no agent in it does not hide one.  See ai-ask's
+The ones you have submitted a review of since their last commit are
+left out, and so are the ones an agent is at work on in a worktree of
+their own.  A comment of yours is not a review, and a worktree left
+behind with no agent in it does not hide one.  See ai-ask's
 ai_ask_pr_done.  Returns a list (PR TEXT) for an interactive spec; see
 `ai-gh--read-args'."
   (let ((done (ai-ask--call "ai_ask_pr_done"

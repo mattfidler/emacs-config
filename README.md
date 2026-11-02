@@ -390,17 +390,21 @@ newest first, annotated with the title and who opened it; a number, a `#number`
 or the URL of one all work, so a closed pull request can still be typed in.  The
 worktree is `~/src/<repo>-<branch>-pr<N>`, its branch made safe for a file name
 (`fix/something` becomes `fix-something`) -- a flat sibling of the repository
-even when asked for from inside another worktree.  Pull requests that already have one are
-left out of the list, since an agent is living in those: typing the number in
-anyway re-enters it, which re-attaches to the conversation already there.
+even when asked for from inside another worktree.  Left out of the list are the
+pull requests you have submitted a review of since their last commit, and the
+ones an agent is at work on in their worktree.  A comment of yours is not a
+review -- it may be asking the author for something -- and a worktree left
+behind with no agent in it does not hide one.  Typing a number in anyway
+re-enters its worktree, which re-attaches to the conversation already there.
 
 Once the agent is waiting for input it is asked for `ai-pr-prompt`: check no one
 else has said on the pull request that they are reviewing it, stopping if
 someone has, and otherwise say there that it is starting a review, so it is
 clear who is reviewing it; then review the pull request, fix what it finds -- except what another open pull request already
 fixes, which it leaves to that one -- run `air format .` over the R it touches
-before each commit, merge the trunk in whenever it moves, and say on the pull
-request what it changed and what it left to which other pull request.  `C-u` first lets you edit what it is asked, and an agent
+before each commit, merge the trunk in whenever it moves, and submit a review of the
+pull request (`gh pr review --comment`) saying what it changed and what it left
+to which other pull request.  `C-u` first lets you edit what it is asked, and an agent
 already at work in that worktree is left alone rather than asked again.
 
 A Claude no longer running in a pull request's or an issue's worktree, but that

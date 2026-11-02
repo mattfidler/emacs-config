@@ -384,17 +384,21 @@ ai_ask_agent_running() {
 
 # The open pull requests of the repository whose main worktree is ROOT that
 # there is no review to start on, one number a line: the ones the gh user has
-# already reviewed or commented on, and the ones an agent is at work on in a
-# worktree of their own.  A worktree with no agent in it, and no review of
-# theirs on the pull request, is not reason enough: one was left behind.
+# submitted a review of since their last commit, and the ones an agent is at
+# work on in a worktree of their own.  A comment is not a review -- it may be
+# asking the author for something -- and a review older than the last commit
+# is of code since changed.  Nor is a worktree with no agent in it reason
+# enough: one was left behind.
 ai_ask_pr_done() {
     local root=$1 me number dir worktrees
     me=$(cd "$root" && gh api user --jq .login 2>/dev/null)
     [ -z "$me" ] ||
         (cd "$root" && gh pr list --state open --limit 200 \
-             --json number,reviews,comments \
-             --jq ".[] | select(any(.reviews[], .comments[];
-                                    .author.login == \"$me\")) | .number" \
+             --json number,reviews,commits \
+             --jq ".[] | (.commits[-1].committedDate // \"\") as \$last
+                       | select(any(.reviews[]; .author.login == \"$me\"
+                                               and .submittedAt >= \$last))
+                       | .number" \
              2>/dev/null)
     worktrees=$(git -C "$root" worktree list --porcelain)
     while IFS= read -r number; do
