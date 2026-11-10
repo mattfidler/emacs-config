@@ -386,8 +386,10 @@ place; the agent can read, build, commit and push it while the checkout you are
 reading stays as you left it.
 
 Asking with no argument completes over the repository's open pull requests,
-newest first, annotated with the title and who opened it; a number, a `#number`
-or the URL of one all work, so a closed pull request can still be typed in.  The
+newest first, each with its title and who opened it -- and any part of those
+matches, so `dop853` or an author's name finds one as well as its number does; a
+number, a `#number` or the URL of one all work, so a closed pull request can
+still be typed in.  The
 worktree is `~/src/<repo>-<branch>-pr<N>`, its branch made safe for a file name
 (`fix/something` becomes `fix-something`) -- a flat sibling of the repository
 even when asked for from inside another worktree.  Left out of the list are the

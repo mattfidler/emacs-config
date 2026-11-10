@@ -2328,11 +2328,25 @@ siblings in ~/src even when this is asked for from inside another one."
 (defun ai-gh--read (prompt items category)
   "Read one of ITEMS, each (NUMBER AUTHOR TITLE), with PROMPT.
 
-Returns the number as a string.  Anything that is not listed is taken as
-one anyway, so something `gh' did not list -- a closed one, or one in a
+Returns the number as a string.  Each is offered as its number, title
+and author, and matched anywhere in that -- so a pull request or an
+issue can be found by a word of its title or by who opened it, not
+only by its number.  Anything that is not listed is taken as one
+anyway, so something `gh' did not list -- a closed one, or one in a
 repository it cannot reach -- can still be typed in.  CATEGORY is the
 completion category, for whatever annotates or acts on candidates."
   (let* ((width (apply #'max 1 (mapcar (lambda (p) (length (car p))) items)))
+         (choices
+          (mapcar (lambda (item)
+                    (cons (concat (car item)
+                                  (make-string (1+ (- width (length (car item))))
+                                               ?\s)
+                                  (or (nth 2 item) "")
+                                  (and (nth 1 item)
+                                       (propertize (concat "  " (nth 1 item))
+                                                   'face 'completions-annotations)))
+                          (car item)))
+                  items))
          (table
           (lambda (string pred action)
             (if (eq action 'metadata)
@@ -2340,17 +2354,21 @@ completion category, for whatever annotates or acts on candidates."
                   (category . ,category)
                   ;; gh hands them over newest first; keep that.
                   (display-sort-function . identity)
-                  (cycle-sort-function . identity)
-                  (annotation-function
-                   . ,(lambda (cand)
-                        (let ((item (assoc cand items)))
-                          (concat (make-string (1+ (- width (length cand))) ?\s)
-                                  (propertize (or (nth 2 item) "")
-                                              'face 'completions-annotations)
-                                  (and (nth 1 item)
-                                       (concat "  " (nth 1 item))))))))
-              (complete-with-action action items string pred)))))
-    (string-trim (completing-read prompt table nil nil))))
+                  (cycle-sort-function . identity))
+              (complete-with-action action choices string pred))))
+         ;; A word of the title or the author is in the middle of the
+         ;; candidate, where the default styles, matching from the start,
+         ;; never look.
+         (completion-category-overrides
+          (cons `(,category (styles substring partial-completion basic))
+                completion-category-overrides))
+         (choice (string-trim (completing-read prompt table nil nil))))
+    (cond
+     ((cdr (assoc choice choices)))
+     ;; A candidate cut short, or edited after its number.
+     ((string-match "\\`#?\\([0-9]+\\)\\s-" choice)
+      (match-string 1 choice))
+     (t choice))))
 
 (defun ai-gh--worktree-name (kind number &optional root label)
   "Where the worktree for KIND (\"pr\" or \"issue\") NUMBER goes.
