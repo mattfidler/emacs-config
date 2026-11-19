@@ -2488,7 +2488,7 @@ already living there."
 ;;
 ;; The pull request commands' other half: rather than pick up a branch someone
 ;; has already pushed, cut one for an issue and hand the agent the whole job --
-;; fix it, keep the branch mergeable, get it reviewed by a different model, and
+;; fix it, get it reviewed by a different model, and
 ;; open the pull request at the end.
 
 (defcustom ai-reviewer nil
@@ -2558,11 +2558,9 @@ reviewer's credits come back are set.  What it warns about is echoed."
           "worktree, and each next part gets a worktree of its own beside this "
           "one, named as this one with -part2, -part3 and so on added, on a "
           "branch issue-%i-part2, issue-%i-part3 and so on cut from the part "
-          "before it.  Commit and push often.  Whenever origin/%t moves, keep up "
-          "with it: a single branch by merging origin/%t into it, a stack by "
-          "rebasing the entire stack onto origin/%t, each part onto the one "
-          "before it, and pushing with --force-with-lease, so every part shows "
-          "only its own change.  Once the fix is complete, review it with an "
+          "before it.  Commit and push often.  Do not merge origin/%t in or "
+          "rebase onto it: keeping the branches up with origin/%t is left to "
+          "another agent.  Once the fix is complete, review it with an "
           "independent reviewer (preferring %r) until no issues remain; "
           "before fixing a finding, look through the open pull requests "
           "(`gh pr list') for one that already fixes it, and leave any that "
@@ -2570,11 +2568,8 @@ reviewer's credits come back are set.  What it warns about is echoed."
           "it in this one's description.  Once "
           "the review is clean, the R is formatted with air and the changes are "
           "linted, open the pull requests: the first part into %t, and each next "
-          "part into the part before it.  Monitor them every hour, fixing any "
-          "CI/CD failures and keeping up with origin/%t the same way; when a "
-          "part is merged, rebase what is left of the stack onto origin/%t, "
-          "leaving out the commits that landed there, and point the next part's pull request at %t, so the rest stays ready for "
-          "human review and integration")
+          "part into the part before it.  Do not monitor them afterwards: "
+          "fixing CI/CD failures is left to another agent")
   "What an agent started on an issue is asked to do.
 
 %i is replaced by the issue number, %r by the reviewer -- see
@@ -2588,7 +2583,9 @@ AI_ISSUE_BASE names another."
   (concat "Can you review pull request #%p with an independent reviewer "
           "(preferring %r), and fix what you find, committing and pushing "
           "to its branch often; run `air format .' over the R you touch "
-          "before each commit, and %m.  Before starting, look through the "
+          "before each commit.  Do not merge the branch it targets in or "
+          "rebase onto it, nor rebase its stack: keeping it up with what it "
+          "targets is left to another agent.  Before starting, look through the "
           "pull request's comments for someone else saying they are already "
           "reviewing it; if anyone is, stop and tell me who rather than "
           "starting.  Otherwise comment on the pull request that you are "
@@ -2606,8 +2603,9 @@ AI_ISSUE_BASE names another."
 `ai-reviewer' -- %o by the remote that has the branch it targets and %t
 by that branch, which need not be the trunk.  %m is keeping up with it:
 merging it in, or, for a pull request stacked on another, rebasing the
-whole stack onto the branch the bottom of it targets.  The shell's
-ai-pr works these out, through ai-ask, the same way."
+whole stack onto the branch the bottom of it targets; the default leaves
+that to another agent, and does not use it.  The shell's ai-pr works
+these out, through ai-ask, the same way."
   :type 'string
   :group 'tools)
 
@@ -3085,8 +3083,7 @@ edit what it is asked first; TEXT is that, from Lisp.  See
 
 The worktree is ~/src/<repo>-issue<ISSUE>, on a branch cut from the
 trunk, and once Claude is waiting for input it is asked for
-`ai-issue-prompt': fix the issue, keep the branch merged with the
-trunk, have an independent reviewer (see `ai-reviewer') review it, and
+`ai-issue-prompt': fix the issue, have an independent reviewer (see `ai-reviewer') review it, and
 open the pull request.  With a
 prefix argument, edit what it is asked first; TEXT is that, from Lisp.
 See `ai-issue--start'."

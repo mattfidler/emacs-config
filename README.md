@@ -404,7 +404,7 @@ else has said on the pull request that they are reviewing it, stopping if
 someone has, and otherwise say there that it is starting a review, so it is
 clear who is reviewing it; then review the pull request, fix what it finds -- except what another open pull request already
 fixes, which it leaves to that one -- run `air format .` over the R it touches
-before each commit, merge the trunk in whenever it moves, and submit a review of the
+before each commit -- leaving keeping it up with the trunk to another agent -- and submit a review of the
 pull request (`gh pr review --comment`) saying what it changed and what it left
 to which other pull request.  `C-u` first lets you edit what it is asked, and an agent
 already at work in that worktree is left alone rather than asked again.
@@ -438,7 +438,7 @@ HEAD.  Once the agent's terminal has drawn its prompt and gone quiet for
 `ai-send-quiet-seconds`, it is asked for `ai-issue-prompt`: check no one else
 is working on the issue, stopping if anyone is, and claim it -- assigning itself
 and commenting that it is starting on it, so it is clear who has it -- then fix
-the issue, committing and pushing often and merging `origin/main` in whenever it has moved,
+the issue, committing and pushing often (keeping up with `origin/main` is left to another agent),
 then have an independent reviewer -- agy, then codex, then kilo, then Claude Fable,
 whichever still has credits (see below, and `ai-reviewer`) -- go over it until
 it comes back clean, leaving any finding another open pull request already fixes
@@ -470,10 +470,9 @@ export AI_FABLE_OUT_UNTIL=
 
 With every one out, the one back soonest is named anyway; `AI_REVIEWER` names
 one reviewer outright, as
-the `ai-reviewer` variable does in Emacs.  `ai-pr` merges in the branch the pull request actually
-targets (its base, on whichever remote has it), not just the trunk; for a pull
-request stacked on another, it asks for the whole stack to be rebased onto the
-branch the bottom of the stack targets.  `ai-issue` cuts from, and opens its
+the `ai-reviewer` variable does in Emacs.  Neither `ai-pr` nor `ai-issue` asks the
+agent to merge in or rebase onto the branch its work targets: keeping branches up
+with it is left to another agent.  `ai-issue` cuts from, and opens its
 pull request into, the trunk or `AI_ISSUE_BASE`.
 
 `agy` works as a name for antigravity throughout, since that is what the CLI is

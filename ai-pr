@@ -11,14 +11,12 @@
 #
 # Once the agent is waiting for input it is asked to do the reviewing: read the
 # pull request with an independent reviewer, fix what it finds, format the R it
-# touches with air, keep it merged with the branch the pull request targets --
-# origin/main, or whatever base it was opened against, on whichever remote has
-# it -- and push the branch back.  A pull request stacked on another one (its
-# base is that one's branch) is instead kept rebased, the whole stack of them,
-# onto the branch the bottom of the stack targets: where it is all going in the
-# end, origin/main as like as not.  AI_PR_PROMPT is that request: %p the pull
-# request, %r the reviewer, %o the remote, %t the branch it targets and %m how
-# to keep up with it -- the merge, or the rebase of the stack.
+# touches with air, and push the branch back.  It is asked not to merge in or
+# rebase onto the branch the pull request targets: keeping it up with that is
+# left to another agent.  AI_PR_PROMPT is that request: %p the pull request,
+# %r the reviewer, %o the remote, %t the branch it targets and %m how to keep
+# up with it -- the merge, or the rebase of the stack -- which the default
+# request no longer uses.
 #
 # The worktree is a flat sibling of the repository even when this is run from
 # inside another worktree, and running it again for the same pull request
@@ -175,7 +173,7 @@ if [ "$tool" = claude ] && [ "$(ai_ask_claude_history "$worktree")" = yes ]; the
     printf '%s-pr: continuing the conversation already had in %s\n' \
            "$tool" "$worktree" >&2
 else
-    prompt=${AI_PR_PROMPT:-"Can you review pull request #%p with an independent reviewer (preferring %r), and fix what you find, committing and pushing to its branch often; run \`air format .' over the R you touch before each commit, and %m.  Before starting, look through the pull request's comments for someone else saying they are already reviewing it; if anyone is, stop and tell me who rather than starting.  Otherwise comment on the pull request that you are starting a review of it, so it is clear who is reviewing it.  Before fixing a finding, look through the other open pull requests (\`gh pr list') for one that already fixes it, and leave any that does to that pull request rather than fixing it again here.  Once nothing is left to fix, submit a review of the pull request (\`gh pr review %p --comment') saying what you changed, and which findings you left to which other pull request"}
+    prompt=${AI_PR_PROMPT:-"Can you review pull request #%p with an independent reviewer (preferring %r), and fix what you find, committing and pushing to its branch often; run \`air format .' over the R you touch before each commit.  Do not merge the branch it targets in or rebase onto it, nor rebase its stack: keeping it up with what it targets is left to another agent.  Before starting, look through the pull request's comments for someone else saying they are already reviewing it; if anyone is, stop and tell me who rather than starting.  Otherwise comment on the pull request that you are starting a review of it, so it is clear who is reviewing it.  Before fixing a finding, look through the other open pull requests (\`gh pr list') for one that already fixes it, and leave any that does to that pull request rather than fixing it again here.  Once nothing is left to fix, submit a review of the pull request (\`gh pr review %p --comment') saying what you changed, and which findings you left to which other pull request"}
     # Quoted, or bash 5.2 reads an & in the replacement as the text it replaces.
     prompt=${prompt//%m/"$keep_up"}
     prompt=${prompt//%p/"$pr"}
