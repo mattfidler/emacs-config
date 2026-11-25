@@ -1,0 +1,451 @@
+#!/usr/bin/env bash
+# ai-auto -- keep a fixed number of agents fixing issues and reviewing pull
+# requests, starting each one in Emacs through `claude-issue' / `claude-pr'.
+#
+# Each pass counts the agents still at work, across the repositories in
+# AI_AUTO_REPOS (nlmixr2est and rxode2 by default), and starts new ones until
+# there are up to --issues of them on issues and up to --prs on pull requests.
+# Run it once, from cron or a systemd timer, or leave it running with --loop.
+#
+# An issue agent is at work while its tmux session (an Emacs claude buffer) is
+# alive in ~/src/<repo>-issue<N> and the issue is still open with no pull
+# request on GitHub from issue-<N> or issue-<N>-part<K>.  Once one is there, in
+# any state -- opening it is the last thing the agent is asked to do -- the
+# issue counts as finished, its slot is free, and another issue is taken.
+#
+# A pull request agent is at work while its session is alive in the pull
+# request's worktree, the pull request is open, and you have not submitted a
+# review of it since its last commit -- which is how its job ends.
+#
+# An idle agent does not hold a slot: one whose screen has not changed for
+# --idle minutes (30 by default) has stopped -- to ask you something, as like
+# as not -- and another is started in its place.  A working claude redraws its
+# spinner all the time, so it never looks idle.  --status lists the idle ones,
+# and ai-idle lists every agent that has gone still.
+#
+# Which issues are taken: open ones with no worktree yet that no one else is
+# on (see ai_ask_issue_claims in ai-ask), with no pull request from issue-<N>,
+# that ask for one task.  An issue is left alone as triage or tracking when
+#   - its body has a task list of two or more items (- [ ] / - [x]),
+#   - its body lists two or more other issues as bullets (- #123),
+#   - its title or a label says triage, tracking, todo, roadmap, epic, meta,
+#     umbrella or checklist (see AI_AUTO_SKIP_WORDS),
+#   - a label marks it as not a task (AI_AUTO_SKIP_LABELS), or
+#   - it says it depends on, or is blocked by, another issue.
+#
+# Which pull requests are taken: open ones that are not drafts, that you have
+# not reviewed since their last commit, and that have no agent at work on them.
+#
+# Starting alternates between the repositories so each gets a turn.
+#
+# Usage: ai-auto [options]
+#   -i, --issues N     issue agents to keep at work (default 3)
+#   -p, --prs N        pull request agents to keep at work (default 3)
+#       --total        the limits are across all repositories (default: per repository)
+#       --idle MIN     an agent still for MIN minutes is idle (default 30)
+#       --oldest       take the oldest issues and pull requests first
+#                      (default: newest first)
+#       --loop [MIN]   keep going, a pass every MIN minutes (default 15)
+#       --pop          show each agent's buffer in Emacs as it starts
+#                      (default: started in the background, windows untouched)
+#   -n, --dry-run      say what would be started; start nothing
+#       --status       list the agents at work and what is next; start nothing
+#   -h, --help
+#
+# Environment:
+#   AI_AUTO_REPOS        repositories under AI_AUTO_SRC (default "nlmixr2est rxode2")
+#   AI_AUTO_SRC          where they are checked out (default ~/src)
+#   AI_AUTO_SKIP_WORDS   regexp for a title or label meaning triage or tracking
+#   AI_AUTO_SKIP_LABELS  regexp for a label meaning not a task
+#   AI_AUTO_IDLE         default for --idle
+#   AI_AUTO_LOG          log of what was started (default ~/.cache/ai-auto.log)
+#
+# Needs: the Emacs daemon (emacsclient), gh, jq, tmux, and ai-ask on PATH.
+
+set -uo pipefail
+
+PROG=${0##*/}
+SRC=${AI_AUTO_SRC:-$HOME/src}
+read -r -a REPOS <<<"${AI_AUTO_REPOS:-nlmixr2est rxode2}"
+SKIP_WORDS=${AI_AUTO_SKIP_WORDS:-'triage|tracking|track(er)?\b|todo|to-do|roadmap|epic|\bmeta\b|umbrella|checklist|overview'}
+SKIP_LABELS=${AI_AUTO_SKIP_LABELS:-'question|discussion|wontfix|won.t fix|duplicate|invalid|on.hold|blocked|help wanted'}
+LOG=${AI_AUTO_LOG:-$HOME/.cache/ai-auto.log}
+AGENT=claude
+
+idle_limit=${AI_AUTO_IDLE:-30} max_issues=3 max_prs=3 per_repo=1 oldest=0 loop=0 interval=15
+pop=0 dry=0 status=0
+
+die()  { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
+say()  { printf '%s\n' "$*"; }
+note() { printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOG"; say "$*"; }
+
+while [ $# -gt 0 ]; do
+    case $1 in
+        -i|--issues)  max_issues=${2:?}; shift ;;
+        -p|--prs)     max_prs=${2:?}; shift ;;
+        --total)      per_repo=0 ;;
+        --per-repo)   per_repo=1 ;;
+        --idle)       idle_limit=${2:?}; shift ;;
+        --oldest)     oldest=1 ;;
+        --loop)       loop=1
+                      if [[ ${2-} =~ ^[0-9]+$ ]]; then interval=$2; shift; fi ;;
+        --pop)        pop=1 ;;
+        -n|--dry-run) dry=1 ;;
+        --status)     status=1 dry=1 ;;
+        -h|--help)    sed -n '2,/^$/{s/^# \{0,1\}//;p}' "$0"; exit 0 ;;
+        *)            die "unknown option $1 (see --help)" ;;
+    esac
+    shift
+done
+case $max_issues$max_prs$interval$idle_limit in *[!0-9]*) die "counts and minutes are whole numbers" ;; esac
+
+for cmd in gh jq tmux emacsclient; do
+    command -v "$cmd" >/dev/null 2>&1 || die "$cmd is not installed"
+done
+ask=$(command -v ai-ask) || die "ai-ask is not on PATH (run install-scripts in emacs-config)"
+# shellcheck source=/dev/null
+. "$ask"
+mkdir -p -- "$(dirname -- "$LOG")"
+
+me=$(gh api user --jq .login 2>/dev/null) || die "gh is not logged in"
+
+# ------------------------------------------------------------------ GitHub
+
+# The open pull requests of ROOT as a JSON array of {number, draft, reviewed}:
+# reviewed is whether $me has submitted a review since the last commit.  A
+# hand-written query: gh pr list asking for reviews and commits together runs
+# past GitHub's 500,000-node limit.
+open_prs() {
+    local root=$1 owner name
+    IFS=/ read -r owner name < <(cd "$root" && gh repo view --json nameWithOwner --jq .nameWithOwner)
+    gh api graphql --paginate -F owner="$owner" -F name="$name" -f query='
+      query($owner: String!, $name: String!, $endCursor: String) {
+        repository(owner: $owner, name: $name) {
+          pullRequests(states: OPEN, first: 50, after: $endCursor,
+                       orderBy: {field: CREATED_AT, direction: DESC}) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              number isDraft createdAt headRefName
+              commits(last: 1) { nodes { commit { committedDate } } }
+              reviews(last: 30) { nodes { author { login } submittedAt } }
+            }
+          }
+        }
+      }' 2>/dev/null |
+        jq -s --arg me "$me" '[.[].data.repository.pullRequests.nodes[]
+            | (.commits.nodes[0].commit.committedDate // "") as $last
+            | {number, createdAt, draft: .isDraft, head: .headRefName,
+               reviewed: any(.reviews.nodes[]; .author.login == $me
+                                              and .submittedAt >= $last)}]'
+}
+
+# Whether issue JSON {title, body, labels} asks for one task -- see the top.
+single_task_filter='
+  def items(re): [(.body // "") | splits("\r?\n") | select(test(re))] | length;
+  select(
+    (items("^\\s*[-*+]\\s+\\[[ xX]\\]") < 2)
+    and (items("^\\s*[-*+]\\s+(\\[[ xX]\\]\\s*)?#[0-9]+") < 2)
+    and ((.title | test($words; "i")) | not)
+    and (any(.labels[]; .name | test($words + "|" + $labels; "i")) | not)
+    and (((.body // "") | test("(depends on|blocked by|blocked on) +(#|https://github.com/\\S+/issues/)[0-9]+"; "i")) | not)
+  )'
+
+# ------------------------------------------------------------------ one pass
+
+declare -A busy_issues busy_prs     # repo -> count
+declare -a busy_lines idle_lines
+declare -A cand_issues cand_prs     # repo -> newline list of numbers
+
+# Minutes since the agent's screen in worktree DIR last changed.
+idle_for() {
+    local session act
+    session=$(ai_ask_session "$1")
+    act=$(tmux -L "$AGENT" display -p -t "=$session:" '#{window_activity}' 2>/dev/null) ||
+        { printf 0; return; }
+    printf '%d' $(( ($(date +%s) - act) / 60 ))
+}
+
+# Count the agent of KIND on REPO#N in DIR as at work, unless it is idle.
+at_work() {
+    local kind=$1 repo=$2 n=$3 d=$4 idle line
+    idle=$(idle_for "$d")
+    line=$(printf '%-6s %s#%s  idle %sm  %s' "$kind" "$repo" "$n" "$idle" "$d")
+    if [ "$idle" -ge "$idle_limit" ]; then
+        idle_lines+=("$line")
+        return
+    fi
+    busy_lines+=("$line")
+    case $kind in
+        issue) busy_issues[$repo]=$(( ${busy_issues[$repo]} + 1 )) ;;
+        pr)    busy_prs[$repo]=$(( ${busy_prs[$repo]} + 1 )) ;;
+    esac
+}
+
+survey_repo() {
+    local repo=$1 root=$SRC/$1 heads prs issues claims d b n
+    [ -d "$root/.git" ] || { say "$repo: no checkout at $root; skipped" >&2; return; }
+
+    heads=$(cd "$root" && gh pr list --state all --limit 1000 \
+                --json number,headRefName,state 2>/dev/null) || heads='[]'
+    prs=$(open_prs "$root") || prs='[]'
+    [ -n "$prs" ] || prs='[]'
+    issues=$(cd "$root" && gh issue list --state open --limit 300 \
+                 --json number,title,body,labels,createdAt 2>/dev/null) || issues='[]'
+
+    # Agents at work.
+    busy_issues[$repo]=0 busy_prs[$repo]=0
+    while IFS= read -r d; do
+        b=$(basename -- "$d")
+        if [[ $b =~ ^$repo-issue([0-9]+)$ ]]; then
+            n=${BASH_REMATCH[1]}
+            ai_ask_agent_running "$d" || continue
+            jq -e --argjson n "$n" 'any(.[]; .number == $n)' <<<"$issues" >/dev/null || continue
+            # Finished once any pull request for it is on GitHub, open,
+            # merged or closed: from issue-<N>, or any part of its stack.
+            jq -e --arg re "^issue-$n(-part[0-9]+)?\$" 'any(.[]; .headRefName | test($re))' \
+               <<<"$heads" >/dev/null && continue
+            at_work issue "$repo" "$n" "$d"
+        elif [[ $b =~ ^$repo-.*pr([0-9]+)$ ]]; then
+            n=${BASH_REMATCH[1]}
+            ai_ask_agent_running "$d" || continue
+            jq -e --argjson n "$n" 'any(.[]; .number == $n and (.reviewed | not))' \
+               <<<"$prs" >/dev/null || continue
+            at_work pr "$repo" "$n" "$d"
+        fi
+    done < <(git -C "$root" worktree list --porcelain | sed -n 's/^worktree //p')
+
+    # Issues to take.
+    claims=$(ai_ask_issue_claims "$root" | cut -f1 | sort -u | jq -R 'tonumber? // empty' | jq -s .)
+    cand_issues[$repo]=$(
+        jq -r --argjson claims "$claims" --argjson heads "$heads" \
+              --arg words "$SKIP_WORDS" --arg labels "$SKIP_LABELS" \
+              --argjson oldest "$oldest" "
+            [ .[]
+              | select(.number as \$n | \$claims | index(\$n) | not)
+              | select(.number as \$n | any(\$heads[];
+                    .headRefName | test(\"^issue-\(\$n)(-part[0-9]+)?\$\")) | not)
+              | $single_task_filter ]
+            | sort_by(.createdAt) | if \$oldest == 1 then . else reverse end
+            | .[] | \"\(.number)\t\(.title)\"" <<<"$issues" |
+            ai_ask_unstarted "$root" issue |
+            while IFS= read -r line; do
+                skipped "$repo" issue "${line%%$'\t'*}" || printf '%s\n' "$line"
+            done)
+
+    # Pull requests to take: not drafts, not reviewed, no agent in their
+    # worktree, and whose branch is not checked out in some other worktree --
+    # an issue agent's stack, say -- since gh cannot check it out a second time.
+    local wts number head
+    wts=$(git -C "$root" worktree list --porcelain)
+    # A worktree part way through a rebase is listed as detached, yet still
+    # holds its branch: add those branches as though checked out.
+    local gd f
+    for gd in "$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)"/worktrees/*/; do
+        for f in "$gd"rebase-merge/head-name "$gd"rebase-apply/head-name; do
+            [ -f "$f" ] && wts+=$'\nworktree '"$gd"$'\n'"branch $(cat "$f")"
+        done
+    done
+    cand_prs[$repo]=$(
+        jq -r --argjson oldest "$oldest" '
+            [ .[] | select((.draft or .reviewed) | not) ]
+            | sort_by(.createdAt) | if $oldest == 1 then . else reverse end
+            | .[] | "\(.number)\t\(.head)"' <<<"$prs" |
+        while IFS=$'\t' read -r number head; do
+            d=$(ai_ask_existing "$root" pr "$number" "$wts") || d=
+            [ -n "$d" ] && ai_ask_agent_running "$d" && continue
+            skipped "$repo" pr "$number" && continue
+            awk -v d="$d" -v b="branch refs/heads/$head" '
+                /^worktree / { w = substr($0, 10) }
+                $0 == b && w != d { found = 1 }
+                END { exit !found }' <<<"$wts" && continue
+            printf '%s\n' "$number"
+        done)
+}
+
+# Work that failed to start is passed over for a day rather than tried again
+# every pass: a pull request whose branch is busy or has diverged here, say.
+# Lines of "epoch repo kind number reason".
+SKIP_FILE=${AI_AUTO_SKIP_FILE:-$HOME/.cache/ai-auto.skip}
+skipped() {
+    [ -f "$SKIP_FILE" ] || return 1
+    awk -v r="$1" -v k="$2" -v n="$3" -v since=$(( $(date +%s) - 86400 )) '
+        $1 >= since && $2 == r && $3 == k && $4 == n { found = 1 }
+        END { exit !found }' "$SKIP_FILE"
+}
+skip() { printf '%s %s %s %s %s\n' "$(date +%s)" "$1" "$2" "$3" "$4" >>"$SKIP_FILE"; }
+
+# A string as an Emacs Lisp string.
+el_str() {
+    local s=${1//\\/\\\\}
+    s=${s//\"/\\\"}
+    printf '"%s"' "$s"
+}
+
+# The worktree for issue NUMBER of ROOT, made as ai-issue makes it: issue-<N>
+# cut from the trunk as origin has it now.  Prints it, or the reason it could
+# not be made.
+issue_worktree() {
+    local root=$1 number=$2 trunk branch wt out
+    branch=issue-$number
+    wt="$(dirname -- "$root")/$(basename -- "$root")-issue$number"
+    if [ -d "$wt" ]; then printf '%s' "$wt"; return 0; fi
+    trunk=$(ai_ask_issue_target "$root")
+    [ -n "$trunk" ] || { printf 'cannot tell the trunk of %s' "$root"; return 1; }
+    if git -C "$root" show-ref --verify --quiet "refs/heads/$branch"; then
+        out=$(git -C "$root" worktree add -q -- "$wt" "$branch" 2>&1)
+    else
+        out=$(git -C "$root" fetch -q origin "$trunk" 2>&1 &&
+              git -C "$root" worktree add -q --no-track -b "$branch" -- "$wt" \
+                  "origin/$trunk" 2>&1)
+    fi || { printf '%s' "$(tail -n1 <<<"$out")"; return 1; }
+    printf '%s' "$wt"
+}
+
+# The worktree for pull request NUMBER of ROOT, made as ai-pr makes it: added
+# detached, then gh checks the branch out in it.  Prints it, or the reason it
+# could not be made, having taken the half-made worktree away again.
+pr_worktree() {
+    local root=$1 number=$2 branch wt out
+    if wt=$(ai_ask_existing "$root" pr "$number"); then printf '%s' "$wt"; return 0; fi
+    branch=$(cd "$root" && gh pr view "$number" --json headRefName --jq .headRefName 2>/dev/null)
+    branch=$(printf '%s' "$branch" | tr -cs 'A-Za-z0-9_.-' '-' |
+                 sed -e 's/--*/-/g' -e 's/^[-.]*//' -e 's/[-.]*$//')
+    wt="$(dirname -- "$root")/$(basename -- "$root")-${branch:+$branch-}pr$number"
+    [ -e "$wt" ] && { printf '%s exists and is not a worktree of %s' "$wt" "$root"; return 1; }
+    out=$(git -C "$root" worktree add -q --detach -- "$wt" HEAD 2>&1) ||
+        { printf '%s' "$(tail -n1 <<<"$out")"; return 1; }
+    if ! out=$(cd "$wt" && gh pr checkout "$number" 2>&1); then
+        git -C "$root" worktree remove --force -- "$wt" 2>/dev/null
+        printf '%s' "$(grep -m1 -E 'fatal|error' <<<"$out" || tail -n1 <<<"$out")"
+        return 1
+    fi
+    printf '%s' "$wt"
+}
+
+# Start claude on KIND (issue or pr) NUMBER of REPO in Emacs.  Everything slow
+# -- the worktree, gh, the pull request's target -- is done here first, so all
+# Emacs is asked to do is open the agent's buffer and hand it the prompt: a
+# claude-issue or claude-pr left to do it all would hold Emacs up for seconds
+# at a time, and a C-g in that time would cut it off.
+start() {
+    local repo=$1 kind=$2 number=$3 root=$SRC/$1 fn wt text elisp out try
+    local remote target keep_up
+    case $kind in issue) fn=claude-issue ;; pr) fn=claude-pr ;; esac
+    if [ "$dry" = 1 ]; then
+        say "would start: $fn $repo#$number"
+        return 0
+    fi
+    case $kind in
+        issue)
+            wt=$(issue_worktree "$root" "$number") || {
+                note "FAILED $fn $repo#$number: $wt (skipped for a day)"
+                skip "$repo" "$kind" "$number" worktree
+                return 1; }
+            text="(format-spec ai-issue-prompt
+                    \`((?i . $(el_str "$number"))
+                      (?r . ,(ai-ask--reviewer \"claude\"))
+                      (?t . $(el_str "$(ai_ask_issue_target "$root")"))))" ;;
+        pr)
+            wt=$(pr_worktree "$root" "$number") || {
+                note "FAILED $fn $repo#$number: $wt (skipped for a day)"
+                skip "$repo" "$kind" "$number" checkout
+                return 1; }
+            { IFS= read -r remote; IFS= read -r target; IFS= read -r keep_up; } \
+                < <(ai_ask_pr_target "$root" "$number" ai-auto 2>/dev/null)
+            text="(format-spec ai-pr-prompt
+                    \`((?p . $(el_str "$number"))
+                      (?r . ,(ai-ask--reviewer \"claude\"))
+                      (?o . $(el_str "${remote:-origin}"))
+                      (?t . $(el_str "${target:-main}"))
+                      (?m . $(el_str "$keep_up"))))" ;;
+    esac
+    # yes-or-no-p answers no: nothing should ask, and no one is there to answer.
+    elisp="(let ((default-directory $(el_str "$root/")))
+              (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
+                        ((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+                ($( [ "$pop" = 1 ] && echo progn || echo save-window-excursion )
+                  ($fn $(el_str "$number") $text)))
+              t)"
+    for try in 1 2; do
+        if out=$(timeout 300 emacsclient --eval "$elisp" 2>&1 9>&-); then
+            note "started $fn $repo#$number in $wt"
+            return 0
+        fi
+        # A quit -- a C-g in Emacs as it ran -- is worth one more go.
+        case $out in *Quit*) [ "$try" = 1 ] && sleep 5 && continue ;; esac
+        break
+    done
+    note "FAILED $fn $repo#$number: $out"
+    return 1
+}
+
+# Fill free SLOTS of KIND from the candidate lists, alternating repositories.
+fill() {
+    local kind=$1 max=$2
+    local -n cands=$3 busy=$4
+    local repo total=0 free got progress
+    local -A queue left
+    for repo in "${REPOS[@]}"; do
+        queue[$repo]=$(printf '%s\n' "${cands[$repo]-}" | cut -f1 | sed '/^$/d')
+        total=$(( total + ${busy[$repo]:-0} ))
+    done
+    if [ "$per_repo" = 1 ]; then
+        for repo in "${REPOS[@]}"; do left[$repo]=$(( max - ${busy[$repo]:-0} )); done
+    else
+        free=$(( max - total ))
+    fi
+    progress=1
+    while [ "$progress" = 1 ]; do
+        progress=0
+        for repo in "${REPOS[@]}"; do
+            if [ "$per_repo" = 1 ]; then
+                [ "${left[$repo]}" -gt 0 ] || continue
+            else
+                [ "$free" -gt 0 ] || break 2
+            fi
+            got=$(head -n1 <<<"${queue[$repo]}")
+            [ -n "$got" ] || continue
+            queue[$repo]=$(tail -n +2 <<<"${queue[$repo]}")
+            # A failure still moves the queue on, so the next one is tried.
+            progress=1
+            start "$repo" "$kind" "$got" || continue
+            if [ "$per_repo" = 1 ]; then left[$repo]=$(( left[$repo] - 1 ))
+            else free=$(( free - 1 )); fi
+        done
+    done
+}
+
+pass() {
+    busy_lines=() idle_lines=()
+    busy_issues=() busy_prs=() cand_issues=() cand_prs=()
+    local repo
+    for repo in "${REPOS[@]}"; do survey_repo "$repo"; done
+
+    if [ "$status" = 1 ]; then
+        say "At work (${max_issues} issue / ${max_prs} pr slots$([ "$per_repo" = 1 ] && echo ' per repo')):"
+        [ ${#busy_lines[@]} -gt 0 ] && printf '  %s\n' "${busy_lines[@]}" || say "  none"
+        say "Idle, not counted (still for ${idle_limit}m or more):"
+        [ ${#idle_lines[@]} -gt 0 ] && printf '  %s\n' "${idle_lines[@]}" || say "  none"
+        for repo in "${REPOS[@]}"; do
+            say "Next issues in $repo:"
+            printf '%s\n' "${cand_issues[$repo]}" | sed '/^$/d' | head -5 | sed 's/^/  #/'
+            say "Next pull requests in $repo:"
+            printf '%s\n' "${cand_prs[$repo]}" | sed '/^$/d' | head -5 | sed 's/^/  #/'
+        done
+    fi
+    fill issue "$max_issues" cand_issues busy_issues
+    fill pr "$max_prs" cand_prs busy_prs
+}
+
+emacsclient --eval t >/dev/null 2>&1 || [ "$dry" = 1 ] ||
+    die "the Emacs daemon is not running"
+
+# One pass at a time, even with a --loop and a timer both going.
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/ai-auto.lock"
+flock -n 9 || die "another ai-auto is already running"
+
+pass
+while [ "$loop" = 1 ]; do
+    sleep $(( interval * 60 )) 9>&-
+    pass
+done

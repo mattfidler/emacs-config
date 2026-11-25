@@ -135,7 +135,8 @@ dropped ssh connection or an Emacs restart.
 Six files make that work.  The five that start an agent each serve all of them:
 they work out which agent they are from the name they were called by, so they
 are installed once and linked under one name per agent.  The sixth, `ai-ask`, is
-sourced by two of the others and has no names of its own.
+sourced by two of the others and has no names of its own.  Two more, `ai-auto`
+and `ai-idle`, look after the agents once they are running.
 
 | file | goes to | what it does |
 | --- | --- | --- |
@@ -145,6 +146,8 @@ sourced by two of the others and has no names of its own.
 | `ai-pr` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo,codex}-pr` | checks a pull request out into a worktree of its own and starts an agent in it |
 | `ai-issue` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo,codex}-issue` | cuts a worktree for an issue, starts an agent in it and asks it to fix the issue through to a pull request |
 | `ai-ask` | `~/.local/bin/ai-ask` | sourced by `ai-pr` and `ai-issue`: the session name, the not-yet-started list, and typing the request in once the agent is waiting |
+| `ai-auto` | `~/.local/bin/ai-auto` | keeps up to three claude agents fixing issues and three reviewing pull requests in each of nlmixr2est and rxode2, starting new ones in Emacs as others finish |
+| `ai-idle` | `~/.local/bin/ai-idle` | lists the agents whose screens have gone still -- finished, or waiting on you -- longest idle first |
 
 They are linked into `~/.local/bin`, not copied, so they stay in step with
 `emacs-config.el`, which is loaded straight out of this checkout: a `git pull`
@@ -494,6 +497,44 @@ the same `tmux -L kilo` session rather than two servers; in Emacs `kilocode`,
 `kilocode-tmux-kill`, `kilocode-wt` and `kilocode-pr` are aliases.  `kilo` is the
 name used everywhere else here, because it is the one the CLI spells its own
 `~/.config/kilo` and `~/.local/share/kilo` with.
+
+### Keeping agents at work: `ai-auto`
+
+`ai-auto` runs `claude-issue` and `claude-pr` for you.  Each pass counts the
+claude agents at work in each repository of `AI_AUTO_REPOS` (nlmixr2est and
+rxode2) and starts new ones, through `emacsclient`, until there are up to three
+on issues and three on pull requests in each (`-i`, `-p`; `--total` for one
+limit across them all).  `ai-auto --loop` makes a pass every fifteen minutes;
+`ai-auto --status` says what is at work and what is next, and starts nothing.
+
+An issue's agent is done once a pull request for it -- from `issue-<N>` or any
+`issue-<N>-part<K>` -- is on GitHub, and a pull request's once you have a review
+of it newer than its last commit; that is where `ai-issue-prompt` and
+`ai-pr-prompt` end.  An agent still for 30 minutes (`--idle`, `AI_AUTO_IDLE`)
+holds no slot either: it has stopped, most likely on a question for you, and
+another is started beside it.  `ai-idle` lists those.
+
+Issues are taken newest first (`--oldest` for the other way) from the ones
+`claude-issue` would offer, less any that are not a single task: a task list of
+two or more items, a bullet list of other issues, a title or label saying
+triage, tracking, epic, meta, roadmap and the like (`AI_AUTO_SKIP_WORDS`), a
+label such as question or wontfix (`AI_AUTO_SKIP_LABELS`), or a body saying it
+depends on or is blocked by another issue.  Pull requests are the open ones
+that are not drafts, that you have not reviewed since their last commit, and
+whose branch is not checked out -- or being rebased -- in some other worktree,
+since gh cannot check a branch out twice.
+
+The worktree, the checkout and the prompt's details are all worked out on the
+shell first; Emacs is asked only to open the agent's buffer, with
+`save-window-excursion` (`--pop` to show it).  Left to `claude-pr` itself, the
+git and gh calls held Emacs up for seconds, and a `C-g` in that time cut the
+start off.  What fails to start -- a branch that has diverged here, say -- is
+logged to `~/.cache/ai-auto.log` and passed over for a day
+(`~/.cache/ai-auto.skip`; delete a line to try it sooner).
+
+`ai-idle` lists every agent, of any kind, whose screen has not changed for 30
+minutes (`-m`), longest first, with the worktree it is in; `-a` lists the busy
+ones too, and `-s` prints only the session names, for scripts.
 
 ### Cleaning up worktrees
 

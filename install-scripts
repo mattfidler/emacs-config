@@ -37,7 +37,7 @@ bin="${HOME}/.local/bin"
 config="${HOME}/.config"
 
 # The scripts that go on PATH under their own name.
-scripts=(ai-tmux ai-wt ai-pr ai-issue ai-ask
+scripts=(ai-tmux ai-wt ai-pr ai-issue ai-ask ai-auto ai-idle
          worktree-cleanup habit-hooks-next-slice emacsreset authinfo-pass
          install-scripts)
 

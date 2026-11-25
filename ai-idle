@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# ai-idle -- list the coding agents that have gone quiet.
+#
+# Every agent ai-tmux starts lives in a session on that agent's own tmux
+# server (tmux -L claude, -L antigravity, ...).  One whose screen has not
+# changed for a while has stopped: finished, or -- as like as not -- waiting on
+# a question for you.  A working claude redraws its spinner all the time, so it
+# never looks idle.  This lists those, longest idle first, with the directory
+# each is in, so you know which worktree's conversation to go back to
+# (`C-c a j' in Emacs, or <agent>-tmux run from that directory).
+#
+# ai-auto uses the same measure, and the same default, to decide that an agent
+# no longer holds one of its slots.
+#
+# Usage: ai-idle [-m MIN] [-a] [-k]
+#   -m, --min MIN   idle means still for MIN minutes or more (default 30,
+#                   or AI_AUTO_IDLE)
+#   -a, --all       list every agent, busy ones too, with how long each has
+#                   been still
+#   -s, --sessions  print only the session names, one a line (for scripts)
+#   -h, --help
+
+set -uo pipefail
+
+min=${AI_AUTO_IDLE:-30} all=0 names=0
+while [ $# -gt 0 ]; do
+    case $1 in
+        -m|--min)      min=${2:?}; shift ;;
+        -a|--all)      all=1 ;;
+        -s|--sessions) names=1 ;;
+        -h|--help)     sed -n '2,/^$/{s/^# \{0,1\}//;p}' "$0"; exit 0 ;;
+        *)             printf 'ai-idle: unknown option %s (see --help)\n' "$1" >&2
+                       exit 2 ;;
+    esac
+    shift
+done
+case $min in ''|*[!0-9]*) printf 'ai-idle: --min takes whole minutes\n' >&2; exit 2 ;; esac
+
+now=$(date +%s)
+rows=$(
+    for agent in claude antigravity copilot opencode kilo codex; do
+        tmux -L "$agent" list-sessions \
+             -F "#{window_activity}	$agent	#{session_name}	#{pane_current_path}" \
+             2>/dev/null
+    done | while IFS=$'\t' read -r act agent session dir; do
+        idle=$(( (now - act) / 60 ))
+        [ "$all" = 1 ] || [ "$idle" -ge "$min" ] || continue
+        printf '%s\t%s\t%s\t%s\n' "$idle" "$agent" "$session" "$dir"
+    done | sort -t$'\t' -k1,1nr)
+
+if [ "$names" = 1 ]; then
+    [ -z "$rows" ] || cut -f3 <<<"$rows"
+    exit 0
+fi
+
+if [ -z "$rows" ]; then
+    if [ "$all" = 1 ]; then
+        printf 'No agents running.\n'
+    else
+        printf 'No agent has been still for %sm or more.\n' "$min"
+    fi
+    exit 0
+fi
+
+# Minutes as 45m, 6h12m or 8d3h.
+human() {
+    local m=$1
+    if   [ "$m" -ge 1440 ]; then printf '%dd%dh' $((m / 1440)) $((m % 1440 / 60))
+    elif [ "$m" -ge 60 ];   then printf '%dh%02dm' $((m / 60)) $((m % 60))
+    else                         printf '%dm' "$m"
+    fi
+}
+
+printf '%-8s %-6s %-12s %s\n' IDLE STATE AGENT DIRECTORY
+while IFS=$'\t' read -r idle agent session dir; do
+    state=idle
+    [ "$idle" -ge "$min" ] || state=busy
+    printf '%-8s %-6s %-12s %s\n' "$(human "$idle")" "$state" "$agent" "${dir/#$HOME/\~}"
+done <<<"$rows"
