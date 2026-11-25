@@ -224,7 +224,10 @@ on `<apps> k X`.
 `tabulated-list-mode` buffer of every session on every agent's tmux server, most
 recently used first -- including ones started from another Emacs, another
 machine's ssh connection, or a plain terminal -- with the directory it was
-started in and whether something is already viewing it.
+started in and whether something is already viewing it.  Agents started some
+other way, which leave their sessions on the ordinary tmux server, are listed
+too, as on `default`, when their names match `ai-tmux-other-session-regexp`:
+`ferx-*` and `nlme-*` (the triage sessions among them) unless you change it.
 
 | key | |
 | --- | --- |

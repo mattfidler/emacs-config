@@ -1980,6 +1980,58 @@ Emacs buffer or a terminal -- is currently viewing it."
                     "#{session_attached}\t#{session_activity}' 2>/dev/null"))
            "\n" t)))
 
+;; Agents started by something other than these commands -- a triage loop, or a
+;; script handing out issues -- leave their sessions on the ordinary tmux
+;; server, among everything else there.  The ones worth listing are told apart
+;; by name.
+
+(defcustom ai-tmux-other-session-regexp "\\`\\(?:ferx\\|nlme\\)-"
+  "Sessions on the default tmux server to list beside the agents' own.
+
+A session whose name matches is shown by `ai-tmux-list' and
+`ai-tmux-switch' as on the \"default\" server, and attached to with a
+plain `tmux attach'.  The default catches ferx-* and nlme-*, the
+triage sessions among them.  nil lists none."
+  :type '(choice (const :tag "None" nil) regexp)
+  :group 'tools)
+
+(defun ai-tmux--other-sessions ()
+  "The default tmux server's sessions matching `ai-tmux-other-session-regexp'.
+
+Each element is (ACTIVITY NAME DIRECTORY ATTACHED), as from
+`ai-tmux--server-sessions'."
+  (and ai-tmux-other-session-regexp
+       (seq-filter (lambda (session)
+                     (string-match-p ai-tmux-other-session-regexp
+                                     (nth 1 session)))
+                   (ai-tmux--server-sessions "default"))))
+
+(defun ai-tmux--attach-other (session)
+  "Show SESSION, (NAME DIRECTORY ATTACHED), of the default tmux server here.
+
+A buffer of this Emacs already showing it is popped to rather than
+attaching a second client."
+  (require 'eat)
+  (pcase-let* ((`(,name ,dir ,_attached) session)
+               (bufname (format "*tmux: %s*" name))
+               (live (get-buffer bufname)))
+    (if (and live (get-buffer-process live))
+        (pop-to-buffer live)
+      (let* ((default-directory (if (and dir (file-directory-p dir))
+                                    (file-name-as-directory dir)
+                                  default-directory))
+             (process-adaptive-read-buffering nil)
+             ;; Attaching from inside another tmux is refused otherwise.
+             (process-environment (cons "TMUX" process-environment))
+             (buffer (eat-make (string-trim bufname "\\*" "\\*")
+                               "tmux" nil "-L" "default" "attach-session"
+                               "-t" (concat "=" name))))
+        (with-current-buffer buffer
+          (setq-local eat-enable-directory-tracking nil)
+          (setq-local eat-enable-shell-prompt-annotation nil)
+          (setq-local eat-term-scrollback-size nil))
+        (pop-to-buffer buffer)))))
+
 (defun ai-tmux--sessions (socket)
   "Return the background agent sessions on SOCKET, most recently used first.
 
@@ -1995,14 +2047,19 @@ ATTACHED)."
 Each element is (AGENT NAME DIRECTORY ATTACHED), with AGENT the tmux
 server the session lives on -- one list across every agent in
 `ai-tmux-agents', so a session can be picked without first having to
-remember which agent left it."
+remember which agent left it.  The sessions of the default tmux server
+that `ai-tmux-other-session-regexp' matches come in as on \"default\"."
   (mapcar #'cdr
-          (sort (mapcan (lambda (agent)
-                          (mapcar (lambda (session)
-                                    (cons (car session)
-                                          (cons (car agent) (cdr session))))
-                                  (ai-tmux--server-sessions (car agent))))
-                        ai-tmux-agents)
+          (sort (append
+                 (mapcan (lambda (agent)
+                           (mapcar (lambda (session)
+                                     (cons (car session)
+                                           (cons (car agent) (cdr session))))
+                                   (ai-tmux--server-sessions (car agent))))
+                         ai-tmux-agents)
+                 (mapcar (lambda (session)
+                           (cons (car session) (cons "default" (cdr session))))
+                         (ai-tmux--other-sessions)))
                 (lambda (a b) (> (car a) (car b))))))
 
 (defun ai-tmux--read-session (socket prompt)
@@ -2045,7 +2102,9 @@ running so it can be re-attached.  This actually stops it."
 Hands it to the attach function `ai-tmux-agents' names for that agent,
 which starts a client for the session when this Emacs has none."
   (pcase-let* ((`(,agent ,name ,dir ,attached) session)
-               (attach (cdr (assoc agent ai-tmux-agents))))
+               (attach (if (equal agent "default")
+                           #'ai-tmux--attach-other
+                         (cdr (assoc agent ai-tmux-agents)))))
     (unless attach (user-error "No way to attach to a %s session" agent))
     (funcall attach (list name dir attached))))
 
