@@ -67,7 +67,7 @@ set -uo pipefail
 PROG=${0##*/}
 SRC=${AI_AUTO_SRC:-$HOME/src}
 read -r -a REPOS <<<"${AI_AUTO_REPOS:-nlmixr2est rxode2 rxode2lincmt}"
-SKIP_WORDS=${AI_AUTO_SKIP_WORDS:-'triage|tracking|track(er)?\b|todo|to-do|roadmap|epic|\bmeta\b|umbrella|checklist|overview'}
+SKIP_WORDS=${AI_AUTO_SKIP_WORDS:-'triage|tracking|tracker|todo|to-do|roadmap|epic|\bmeta\b|umbrella|checklist|overview'}
 SKIP_LABELS=${AI_AUTO_SKIP_LABELS:-'question|discussion|wontfix|won.t fix|duplicate|invalid|on.hold|blocked|help wanted'}
 LOG=${AI_AUTO_LOG:-$HOME/.cache/ai-auto.log}
 AGENT=claude
