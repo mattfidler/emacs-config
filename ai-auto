@@ -3,7 +3,7 @@
 # requests, starting each one in Emacs through `claude-issue' / `claude-pr'.
 #
 # Each pass counts the agents still at work, across the repositories in
-# AI_AUTO_REPOS (nlmixr2est and rxode2 by default), and starts new ones until
+# AI_AUTO_REPOS (nlmixr2est, rxode2 and rxode2lincmt by default), and starts new ones until
 # there are up to --issues of them on issues and up to --prs on pull requests.
 # Run it once, from cron or a systemd timer, or leave it running with --loop.
 #
@@ -53,7 +53,7 @@
 #   -h, --help
 #
 # Environment:
-#   AI_AUTO_REPOS        repositories under AI_AUTO_SRC (default "nlmixr2est rxode2")
+#   AI_AUTO_REPOS        repositories under AI_AUTO_SRC (default "nlmixr2est rxode2 rxode2lincmt")
 #   AI_AUTO_SRC          where they are checked out (default ~/src)
 #   AI_AUTO_SKIP_WORDS   regexp for a title or label meaning triage or tracking
 #   AI_AUTO_SKIP_LABELS  regexp for a label meaning not a task
@@ -66,7 +66,7 @@ set -uo pipefail
 
 PROG=${0##*/}
 SRC=${AI_AUTO_SRC:-$HOME/src}
-read -r -a REPOS <<<"${AI_AUTO_REPOS:-nlmixr2est rxode2}"
+read -r -a REPOS <<<"${AI_AUTO_REPOS:-nlmixr2est rxode2 rxode2lincmt}"
 SKIP_WORDS=${AI_AUTO_SKIP_WORDS:-'triage|tracking|track(er)?\b|todo|to-do|roadmap|epic|\bmeta\b|umbrella|checklist|overview'}
 SKIP_LABELS=${AI_AUTO_SKIP_LABELS:-'question|discussion|wontfix|won.t fix|duplicate|invalid|on.hold|blocked|help wanted'}
 LOG=${AI_AUTO_LOG:-$HOME/.cache/ai-auto.log}

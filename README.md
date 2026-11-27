@@ -146,7 +146,7 @@ and `ai-idle`, look after the agents once they are running.
 | `ai-pr` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo,codex}-pr` | checks a pull request out into a worktree of its own and starts an agent in it |
 | `ai-issue` | `~/.local/bin/{claude,antigravity,copilot,opencode,kilo,codex}-issue` | cuts a worktree for an issue, starts an agent in it and asks it to fix the issue through to a pull request |
 | `ai-ask` | `~/.local/bin/ai-ask` | sourced by `ai-pr` and `ai-issue`: the session name, the not-yet-started list, and typing the request in once the agent is waiting |
-| `ai-auto` | `~/.local/bin/ai-auto` | keeps up to three claude agents fixing issues and three reviewing pull requests in each of nlmixr2est and rxode2, starting new ones in Emacs as others finish |
+| `ai-auto` | `~/.local/bin/ai-auto` | keeps up to three claude agents fixing issues and three reviewing pull requests in each of nlmixr2est, rxode2 and rxode2lincmt, starting new ones in Emacs as others finish |
 | `ai-idle` | `~/.local/bin/ai-idle` | lists the agents whose screens have gone still -- finished, or waiting on you -- longest idle first |
 
 They are linked into `~/.local/bin`, not copied, so they stay in step with
@@ -501,8 +501,8 @@ name used everywhere else here, because it is the one the CLI spells its own
 ### Keeping agents at work: `ai-auto`
 
 `ai-auto` runs `claude-issue` and `claude-pr` for you.  Each pass counts the
-claude agents at work in each repository of `AI_AUTO_REPOS` (nlmixr2est and
-rxode2) and starts new ones, through `emacsclient`, until there are up to three
+claude agents at work in each repository of `AI_AUTO_REPOS` (nlmixr2est,
+rxode2 and rxode2lincmt) and starts new ones, through `emacsclient`, until there are up to three
 on issues and three on pull requests in each (`-i`, `-p`; `--total` for one
 limit across them all).  `ai-auto --loop` makes a pass every fifteen minutes;
 `ai-auto --status` says what is at work and what is next, and starts nothing.
